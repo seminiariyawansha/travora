@@ -3,12 +3,15 @@ import {
     arrayUnion,
     doc,
     getDoc,
+    getFirestore,
     increment,
     setDoc,
     updateDoc,
 } from "firebase/firestore";
-import { db as firestoreDb } from "../services/firebaseConfig";
+import { app } from "../services/firebaseConfig";
 import { getPendingSync, markSynced } from "./syncQueue";
+
+const firestoreDb = getFirestore(app);
 
 export async function syncPendingProgress() {
   const pendingItems = await getPendingSync();
@@ -42,7 +45,6 @@ export async function syncPendingProgress() {
       syncedCount++;
     } catch (e) {
       console.log("Sync failed for item", item.id, e);
-      // leave it as synced = 0, will retry next time
     }
   }
 
