@@ -1,6 +1,7 @@
 // src/app/destination.js
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
     Pressable,
     SafeAreaView,
@@ -12,15 +13,39 @@ import {
 import Button from "../components/Button";
 import Tag from "../components/Tag";
 import WeatherBanner from "../components/WeatherBanner";
-import { mockDestinations, mockPoints, mockWeather } from "../data/mockData";
+import { mockWeather } from "../data/mockData"; // still mock until Member 5 is merged
+import { getDestination, getPoints } from "../services/destinationService";
+import { auth } from "../services/firebaseConfig";
+import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
 
 export default function Destination() {
   const router = useRouter();
   const { destinationId } = useLocalSearchParams();
-  const destination =
-    mockDestinations.find((d) => d.id === destinationId) || mockDestinations[0];
-  const points = mockPoints[destination.id] || [];
+  const [destination, setDestination] = useState(null);
+  const [points, setPoints] = useState([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      async function load() {
+        const dest = await getDestination(destinationId);
+        const rawPoints = await getPoints(destinationId);
+        const userId = auth.currentUser?.uid ?? "guest";
+        const progress = await getUserProgress(userId, destinationId);
+
+        const pointsWithStatus = rawPoints.map((p) => ({
+          ...p,
+          unlocked: progress.unlockedPoints.includes(p.id),
+        }));
+
+        setDestination(dest);
+        setPoints(pointsWithStatus);
+      }
+      load();
+    }, [destinationId]),
+  );
+
+  if (!destination) return null; // simple loading guard, swap for a spinner later if you want
 
   return (
     <SafeAreaView style={styles.container}>
