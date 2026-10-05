@@ -2,6 +2,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { useEffect, useState } from "react";
 import {
     Pressable,
     SafeAreaView,
@@ -11,21 +12,42 @@ import {
     View,
 } from "react-native";
 import Button from "../components/Button";
-import { mockPoints } from "../data/mockData";
+import { resolvePointContent } from "../services/contentResolver";
+import { getPoints } from "../services/destinationService";
 import { colors } from "../theme/colors";
 
 export default function Story() {
   const router = useRouter();
-  const { pointId } = useLocalSearchParams();
-  const allPoints = Object.values(mockPoints).flat();
-  const point = allPoints.find((p) => p.id === pointId) || allPoints[0];
+  const { pointId, destinationId } = useLocalSearchParams();
+  const [point, setPoint] = useState(null);
+  const [content, setContent] = useState(null);
 
-  const player = useVideoPlayer(
-    "https://www.w3schools.com/html/mov_bbb.mp4",
-    (player) => {
-      player.loop = false;
-    },
-  );
+  // Data loading — always runs
+  useEffect(() => {
+    async function load() {
+      const points = await getPoints(destinationId);
+      const found = points.find((p) => p.id === pointId);
+      const resolvedContent = await resolvePointContent(destinationId, pointId);
+      setPoint(found);
+      setContent(resolvedContent);
+    }
+    load();
+  }, [pointId, destinationId]);
+
+  // Video player — always called, starts with no source
+  const player = useVideoPlayer(null, (player) => {
+    player.loop = false;
+  });
+
+  // Once content arrives, load its real video into the existing player
+  useEffect(() => {
+    if (content?.videoUrl) {
+      player.replace(content.videoUrl);
+    }
+  }, [content]);
+
+  // Every hook above runs on every render — only the JSX below is conditional
+  if (!point || !content) return null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -38,7 +60,7 @@ export default function Story() {
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
         <Text style={styles.title}>{point.name}</Text>
-        <Text style={styles.storyText}>{point.content.storyText}</Text>
+        <Text style={styles.storyText}>{content.storyText}</Text>
 
         <View style={styles.videoBox}>
           <VideoView
