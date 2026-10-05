@@ -57,7 +57,7 @@ export default function Home() {
         <View>
           <Text style={styles.sectionTitle}>Top Destinations</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {mockDestinations.map((dest) => (
+            {destinations.map((dest) => (
               <Pressable
                 key={dest.id}
                 onPress={() =>
