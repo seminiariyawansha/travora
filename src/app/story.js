@@ -1,7 +1,7 @@
 // src/app/story.js
 import { Ionicons } from "@expo/vector-icons";
-import { Video } from "expo-av";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useVideoPlayer, VideoView } from "expo-video";
 import {
     Pressable,
     SafeAreaView,
@@ -20,6 +20,13 @@ export default function Story() {
   const allPoints = Object.values(mockPoints).flat();
   const point = allPoints.find((p) => p.id === pointId) || allPoints[0];
 
+  const player = useVideoPlayer(
+    "https://www.w3schools.com/html/mov_bbb.mp4",
+    (player) => {
+      player.loop = false;
+    },
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.hero}>
@@ -34,12 +41,11 @@ export default function Story() {
         <Text style={styles.storyText}>{point.content.storyText}</Text>
 
         <View style={styles.videoBox}>
-          {/* Replace the placeholder source below once a real video URL exists */}
-          <Video
-            source={{ uri: "https://www.w3schools.com/html/mov_bbb.mp4" }}
-            useNativeControls
-            resizeMode="contain"
+          <VideoView
             style={{ width: "100%", height: "100%" }}
+            player={player}
+            allowsFullscreen
+            nativeControls
           />
         </View>
 
