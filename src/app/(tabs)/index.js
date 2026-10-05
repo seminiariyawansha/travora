@@ -7,10 +7,14 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    View
+    View,
 } from "react-native";
+
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import WeatherBanner from "../../components/WeatherBanner";
-import { mockDestinations, mockUser, mockWeather } from "../../data/mockData";
+import { mockUser, mockWeather } from "../../data/mockData"; // weather/user still mock until Member 5 and progress wiring are both in
+import { getAllDestinations } from "../../services/destinationService";
 import { colors } from "../../theme/colors";
 
 const SERVICES = [
@@ -22,6 +26,15 @@ const SERVICES = [
 
 export default function Home() {
   const router = useRouter();
+  const [destinations, setDestinations] = useState([]);
+
+  // Refetches every time this screen comes into focus — so a destination
+  // Admin just added shows up without needing to restart the app.
+  useFocusEffect(
+    useCallback(() => {
+      getAllDestinations().then(setDestinations);
+    }, []),
+  );
 
   return (
     <SafeAreaView style={styles.container}>
