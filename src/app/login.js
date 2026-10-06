@@ -1,13 +1,20 @@
 // src/app/login.js
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+} from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import Button from "../components/Button";
 import ScreenContainer from "../components/ScreenContainer";
+import { loginUser } from "../services/authService";
 import { colors } from "../theme/colors";
 import { useResponsive } from "../theme/responsive";
 
@@ -17,9 +24,33 @@ export default function Login() {
   const { moderateScale } = useResponsive();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function handleLogin() {
-    router.replace("/(tabs)");
+  async function handleLogin() {
+    setError("");
+    if (!email || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await loginUser(email, password);
+      router.replace("/(tabs)");
+    } catch (err) {
+      if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/wrong-password" ||
+        err.code === "auth/user-not-found"
+      ) {
+        setError("Incorrect email or password.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -38,6 +69,8 @@ export default function Login() {
           Log in to continue your journey
         </Text>
 
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
         <TextInput
           style={styles.input}
           placeholder="Email address"
@@ -45,6 +78,7 @@ export default function Login() {
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
+          keyboardType="email-address"
         />
         <TextInput
           style={styles.input}
@@ -55,7 +89,11 @@ export default function Login() {
           secureTextEntry
         />
 
-        <Button title="Login" onPress={handleLogin} />
+        {loading ? (
+          <ActivityIndicator color={colors.teal} style={{ marginTop: 10 }} />
+        ) : (
+          <Button title="Login" onPress={handleLogin} />
+        )}
 
         <Pressable
           onPress={() => router.push("/register")}
@@ -71,7 +109,13 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.sand },
   title: { fontWeight: "700", color: colors.ink },
-  subtitle: { color: colors.gray, marginTop: 4, marginBottom: 24 },
+  subtitle: { color: colors.gray, marginTop: 4, marginBottom: 20 },
+  error: {
+    color: "#C0392B",
+    fontSize: 12.5,
+    marginBottom: 12,
+    fontWeight: "600",
+  },
   input: {
     backgroundColor: colors.white,
     borderWidth: 1,
