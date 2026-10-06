@@ -25,8 +25,15 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
+  async function refreshProfile() {
+    if (auth.currentUser) {
+      const updated = await getUserProfile(auth.currentUser.uid);
+      setProfile(updated);
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, setProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
