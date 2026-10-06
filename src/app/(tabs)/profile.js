@@ -1,7 +1,14 @@
 // src/app/(tabs)/profile.js
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -25,6 +32,9 @@ export default function Profile() {
   const { user, profile } = useAuth();
 
   const displayName = profile?.name || user?.displayName || "Explorer";
+  const avatarUrl = profile?.photoURL || user?.photoURL || null;
+  const avatarSize = moderateScale(78);
+
   const stats = {
     totalPoints: profile?.totalPoints ?? 0,
     destinationsVisited: profile?.destinationsVisited ?? 0,
@@ -40,16 +50,38 @@ export default function Profile() {
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <ScreenContainer>
         <View style={[styles.hero, { paddingTop: moderateScale(36) }]}>
-          <View
-            style={[
-              styles.avatar,
-              {
-                width: moderateScale(78),
-                height: moderateScale(78),
-                borderRadius: moderateScale(39),
-              },
-            ]}
-          />
+          {avatarUrl ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={[
+                styles.avatar,
+                {
+                  width: avatarSize,
+                  height: avatarSize,
+                  borderRadius: avatarSize / 2,
+                },
+              ]}
+            />
+          ) : (
+            <View
+              style={[
+                styles.avatar,
+                styles.avatarPlaceholder,
+                {
+                  width: avatarSize,
+                  height: avatarSize,
+                  borderRadius: avatarSize / 2,
+                },
+              ]}
+            >
+              <Ionicons
+                name="person"
+                size={avatarSize * 0.45}
+                color={colors.white}
+              />
+            </View>
+          )}
+
           <Text style={[styles.name, { fontSize: moderateScale(18) }]}>
             {displayName}
           </Text>
@@ -89,6 +121,31 @@ export default function Profile() {
             paddingBottom: insets.bottom + 20,
           }}
         >
+          <View>
+            <View style={styles.menuCard}>
+              <Pressable
+                style={styles.menuRow}
+                onPress={() => router.push("/edit-profile")}
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={moderateScale(18)}
+                  color={colors.teal}
+                />
+                <Text
+                  style={[styles.menuLabel, { fontSize: moderateScale(13.5) }]}
+                >
+                  Edit Profile
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={moderateScale(15)}
+                  color={colors.gray}
+                />
+              </Pressable>
+            </View>
+          </View>
+
           <View>
             <Text
               style={[styles.sectionTitle, { fontSize: moderateScale(15) }]}
@@ -156,9 +213,13 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   avatar: {
-    backgroundColor: "#4A4A4A",
     borderWidth: 3,
     borderColor: "rgba(255,255,255,0.9)",
+  },
+  avatarPlaceholder: {
+    backgroundColor: "#4A4A4A",
+    alignItems: "center",
+    justifyContent: "center",
   },
   name: { fontWeight: "700", color: colors.white, marginTop: 10 },
   statsRow: {
