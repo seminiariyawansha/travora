@@ -6,7 +6,10 @@ import { useState } from "react";
 import {
     ActivityIndicator,
     Image,
+    KeyboardAvoidingView,
+    Platform,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -69,6 +72,7 @@ export default function EditProfile() {
     setAvatarUri(localUri);
     setSavingAvatar(true);
     setError("");
+    setSuccess("");
 
     try {
       const downloadUrl = await uploadAvatar(user.uid, localUri);
@@ -97,7 +101,7 @@ export default function EditProfile() {
 
       if (email !== user.email) {
         if (!currentPassword) {
-          setError("Enter your current password to change your email.");
+          setError("Enter your current password below to change your email.");
           setSavingProfile(false);
           return;
         }
@@ -163,136 +167,168 @@ export default function EditProfile() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <ScreenContainer style={{ paddingBottom: insets.bottom + 24 }}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={22} color={colors.ink} />
-          </Pressable>
-          <Text style={[styles.headerTitle, { fontSize: moderateScale(16) }]}>
-            Edit Profile
-          </Text>
-          <View style={{ width: 22 }} />
-        </View>
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()} hitSlop={10}>
+          <Ionicons name="chevron-back" size={22} color={colors.ink} />
+        </Pressable>
+        <Text style={[styles.headerTitle, { fontSize: moderateScale(16) }]}>
+          Edit Profile
+        </Text>
+        <View style={{ width: 22 }} />
+      </View>
 
-        <View style={{ padding: 20, gap: 16 }}>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          {success ? <Text style={styles.success}>{success}</Text> : null}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={insets.top}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        >
+          <ScreenContainer style={{ padding: 20, gap: 16 }}>
+            {error ? (
+              <View style={styles.messageBox}>
+                <Ionicons name="alert-circle" size={16} color="#C0392B" />
+                <Text style={styles.error}>{error}</Text>
+              </View>
+            ) : null}
+            {success ? (
+              <View style={styles.messageBox}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={16}
+                  color={colors.teal}
+                />
+                <Text style={styles.success}>{success}</Text>
+              </View>
+            ) : null}
 
-          <View style={{ alignItems: "center" }}>
-            <Pressable onPress={handlePickAvatar} style={styles.avatarWrap}>
-              {avatarUri ? (
-                <Image source={{ uri: avatarUri }} style={styles.avatar} />
-              ) : (
-                <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                  <Ionicons name="person" size={32} color={colors.white} />
-                </View>
+            {/* Avatar */}
+            <View style={styles.card}>
+              <View style={{ alignItems: "center" }}>
+                <Text
+                  style={[styles.sectionTitle, { fontSize: moderateScale(14) }]}
+                >
+                  Profile Details
+                </Text>
+                <Pressable onPress={handlePickAvatar} style={styles.avatarWrap}>
+                  {avatarUri ? (
+                    <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                  ) : (
+                    <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                      <Ionicons name="person" size={32} color={colors.white} />
+                    </View>
+                  )}
+                  <View style={styles.avatarEditBadge}>
+                    {savingAvatar ? (
+                      <ActivityIndicator size="small" color={colors.white} />
+                    ) : (
+                      <Ionicons name="camera" size={14} color={colors.white} />
+                    )}
+                  </View>
+                </Pressable>
+                <Text style={styles.avatarHint}>Tap to change photo</Text>
+              </View>
+
+              <Text style={styles.label}>Full name</Text>
+              <TextInput
+                style={styles.input}
+                value={name}
+                onChangeText={setName}
+                placeholder="Your name"
+                placeholderTextColor={colors.gray}
+              />
+
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="Your email"
+                placeholderTextColor={colors.gray}
+              />
+
+              {email !== user?.email && (
+                <>
+                  <Text style={styles.label}>
+                    Current password (required to change email)
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    secureTextEntry
+                    placeholder="Current password"
+                    placeholderTextColor={colors.gray}
+                  />
+                </>
               )}
-              <View style={styles.avatarEditBadge}>
-                {savingAvatar ? (
-                  <ActivityIndicator size="small" color={colors.white} />
+
+              <View style={{ marginTop: 14 }}>
+                {savingProfile ? (
+                  <ActivityIndicator color={colors.teal} />
                 ) : (
-                  <Ionicons name="camera" size={14} color={colors.white} />
+                  <Button title="Save Changes" onPress={handleSaveProfile} />
                 )}
               </View>
-            </Pressable>
-            <Text style={styles.avatarHint}>Tap to change photo</Text>
-          </View>
+            </View>
 
-          <View>
-            <Text style={styles.label}>Full name</Text>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="Your name"
-              placeholderTextColor={colors.gray}
-            />
+            {/* Password */}
+            <View style={styles.card}>
+              <Text
+                style={[styles.sectionTitle, { fontSize: moderateScale(14) }]}
+              >
+                Change Password
+              </Text>
 
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholder="Your email"
-              placeholderTextColor={colors.gray}
-            />
-
-            {email !== user?.email && (
-              <>
-                <Text style={styles.label}>
-                  Current password (required to change email)
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  secureTextEntry
-                  placeholder="Current password"
-                  placeholderTextColor={colors.gray}
-                />
-              </>
-            )}
-
-            {savingProfile ? (
-              <ActivityIndicator color={colors.teal} style={{ marginTop: 8 }} />
-            ) : (
-              <Button title="Save Changes" onPress={handleSaveProfile} />
-            )}
-          </View>
-
-          <View style={styles.divider} />
-
-          <View>
-            <Text
-              style={[styles.sectionTitle, { fontSize: moderateScale(15) }]}
-            >
-              Change Password
-            </Text>
-
-            <Text style={styles.label}>Current password</Text>
-            <TextInput
-              style={styles.input}
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              secureTextEntry
-              placeholder="Current password"
-              placeholderTextColor={colors.gray}
-            />
-
-            <Text style={styles.label}>New password</Text>
-            <TextInput
-              style={styles.input}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              placeholder="New password"
-              placeholderTextColor={colors.gray}
-            />
-
-            <Text style={styles.label}>Confirm new password</Text>
-            <TextInput
-              style={styles.input}
-              value={confirmNewPassword}
-              onChangeText={setConfirmNewPassword}
-              secureTextEntry
-              placeholder="Confirm new password"
-              placeholderTextColor={colors.gray}
-            />
-
-            {savingPassword ? (
-              <ActivityIndicator color={colors.teal} style={{ marginTop: 8 }} />
-            ) : (
-              <Button
-                title="Change Password"
-                variant="secondary"
-                onPress={handleChangePassword}
+              <Text style={styles.label}>Current password</Text>
+              <TextInput
+                style={styles.input}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                secureTextEntry
+                placeholder="Current password"
+                placeholderTextColor={colors.gray}
               />
-            )}
-          </View>
-        </View>
-      </ScreenContainer>
+
+              <Text style={styles.label}>New password</Text>
+              <TextInput
+                style={styles.input}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry
+                placeholder="New password"
+                placeholderTextColor={colors.gray}
+              />
+
+              <Text style={styles.label}>Confirm new password</Text>
+              <TextInput
+                style={styles.input}
+                value={confirmNewPassword}
+                onChangeText={setConfirmNewPassword}
+                secureTextEntry
+                placeholder="Confirm new password"
+                placeholderTextColor={colors.gray}
+              />
+
+              <View style={{ marginTop: 14 }}>
+                {savingPassword ? (
+                  <ActivityIndicator color={colors.teal} />
+                ) : (
+                  <Button
+                    title="Change Password"
+                    variant="secondary"
+                    onPress={handleChangePassword}
+                  />
+                )}
+              </View>
+            </View>
+          </ScreenContainer>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -303,12 +339,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 20,
-    paddingBottom: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: colors.sand,
   },
   headerTitle: { fontWeight: "700", color: colors.ink },
-  error: { color: "#C0392B", fontSize: 12.5, fontWeight: "600" },
-  success: { color: colors.teal, fontSize: 12.5, fontWeight: "600" },
+  messageBox: { flexDirection: "row", alignItems: "center", gap: 6 },
+  error: { color: "#C0392B", fontSize: 12.5, fontWeight: "600", flexShrink: 1 },
+  success: {
+    color: colors.teal,
+    fontSize: 12.5,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: 16,
+  },
   avatarWrap: { position: "relative" },
   avatar: { width: 96, height: 96, borderRadius: 48 },
   avatarPlaceholder: {
@@ -327,9 +377,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: colors.sand,
+    borderColor: colors.white,
   },
   avatarHint: { fontSize: 11.5, color: colors.gray, marginTop: 8 },
+  sectionTitle: { fontWeight: "700", color: colors.ink, marginBottom: 12 },
   label: {
     fontSize: 12,
     fontWeight: "600",
@@ -338,13 +389,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   input: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.sand,
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 12,
-    padding: 14,
+    padding: 13,
     fontSize: 14,
+    color: colors.ink,
   },
-  divider: { height: 1, backgroundColor: colors.divider },
-  sectionTitle: { fontWeight: "700", color: colors.ink, marginBottom: 6 },
 });
