@@ -1,12 +1,14 @@
 // src/app/(tabs)/profile.js
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import ScreenContainer from "../../components/ScreenContainer";
-import { mockUser } from "../../data/mockData";
+import { useAuth } from "../../context/AuthContext";
+import { logoutUser } from "../../services/authService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
 
@@ -19,6 +21,20 @@ const MENU_ITEMS = [
 export default function Profile() {
   const { moderateScale } = useResponsive();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { user, profile } = useAuth();
+
+  const displayName = profile?.name || user?.displayName || "Explorer";
+  const stats = {
+    totalPoints: profile?.totalPoints ?? 0,
+    destinationsVisited: profile?.destinationsVisited ?? 0,
+    pointsUnlocked: profile?.pointsUnlocked ?? 0,
+  };
+
+  async function handleLogout() {
+    await logoutUser();
+    router.replace("/login");
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -35,13 +51,13 @@ export default function Profile() {
             ]}
           />
           <Text style={[styles.name, { fontSize: moderateScale(18) }]}>
-            {mockUser.name}
+            {displayName}
           </Text>
 
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
-                {mockUser.totalPoints}
+                {stats.totalPoints}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Total Points
@@ -49,7 +65,7 @@ export default function Profile() {
             </View>
             <View style={styles.statBox}>
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
-                {mockUser.destinationsVisited}
+                {stats.destinationsVisited}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Destinations
@@ -57,7 +73,7 @@ export default function Profile() {
             </View>
             <View style={styles.statBox}>
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
-                {mockUser.pointsUnlocked}
+                {stats.pointsUnlocked}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Points Unlocked
@@ -108,7 +124,7 @@ export default function Profile() {
                   />
                 </View>
               ))}
-              <Pressable style={styles.menuRow}>
+              <Pressable style={styles.menuRow} onPress={handleLogout}>
                 <Ionicons
                   name="log-out-outline"
                   size={moderateScale(18)}
@@ -138,7 +154,6 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     alignItems: "center",
     width: "100%",
-    borderRadius: 0,
   },
   avatar: {
     backgroundColor: "#4A4A4A",
