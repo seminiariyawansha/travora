@@ -28,10 +28,7 @@ export default function Onboarding() {
           </Text>
         </View>
         <View style={{ paddingBottom: insets.bottom + 16 }}>
-          <Button
-            title="Get Started"
-            onPress={() => router.push("/register")}
-          />
+          <Button title="Get Started" onPress={() => router.push("/login")} />
         </View>
       </ScreenContainer>
     </SafeAreaView>
