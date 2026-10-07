@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,7 +14,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenContainer from "../../components/ScreenContainer";
 import WeatherBanner from "../../components/WeatherBanner";
-import { mockUser, mockWeather } from "../../data/mockData";
+import { useAuth } from "../../context/AuthContext";
+import { mockWeather } from "../../data/mockData";
 import { getDestinations } from "../../services/destinationService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
@@ -28,11 +30,17 @@ const SERVICES = [
 export default function Home() {
   const router = useRouter();
   const { moderateScale } = useResponsive();
+  const { user, profile } = useAuth();
   const [destinations, setDestinations] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Refetches every time this screen comes into focus, so content Admin
-  // just added shows up without needing to restart the app.
+  // Always read the live logged-in user, so edits made on the
+  // Edit Profile screen show up here automatically.
+  const fullName = profile?.name || user?.displayName || "Explorer";
+  const firstName = fullName.trim().split(" ")[0];
+  const avatarUrl = profile?.photoURL || user?.photoURL || null;
+  const avatarSize = moderateScale(42);
+
   useFocusEffect(
     useCallback(() => {
       getDestinations().then(setDestinations);
@@ -52,10 +60,42 @@ export default function Home() {
               Hello,
             </Text>
             <Text style={[styles.name, { fontSize: moderateScale(18) }]}>
-              {mockUser.name}!
+              {firstName}!
             </Text>
           </View>
-          <View style={styles.avatar} />
+
+          <Pressable onPress={() => router.push("/(tabs)/profile")}>
+            {avatarUrl ? (
+              <Image
+                source={{ uri: avatarUrl }}
+                style={{
+                  width: avatarSize,
+                  height: avatarSize,
+                  borderRadius: avatarSize / 2,
+                }}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.avatarPlaceholder,
+                  {
+                    width: avatarSize,
+                    height: avatarSize,
+                    borderRadius: avatarSize / 2,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.avatarInitial,
+                    { fontSize: moderateScale(16) },
+                  ]}
+                >
+                  {firstName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }}>
@@ -173,12 +213,12 @@ const styles = StyleSheet.create({
   },
   greeting: { color: colors.gray },
   name: { fontWeight: "700", color: colors.ink },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: colors.ink,
+  avatarPlaceholder: {
+    backgroundColor: colors.teal,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  avatarInitial: { color: colors.white, fontWeight: "700" },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
