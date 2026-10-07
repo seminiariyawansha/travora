@@ -4,30 +4,30 @@ import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-    ActivityIndicator,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import {
-    SafeAreaView,
-    useSafeAreaInsets,
+  SafeAreaView,
+  useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import Button from "../components/Button";
 import ScreenContainer from "../components/ScreenContainer";
 import { useAuth } from "../context/AuthContext";
 import {
-    updateUserAvatar,
-    updateUserEmail,
-    updateUserName,
-    updateUserPassword,
-    uploadAvatar,
+  updateUserAvatar,
+  updateUserEmail,
+  updateUserName,
+  updateUserPassword,
+  uploadAvatar,
 } from "../services/authService";
 import { colors } from "../theme/colors";
 import { useResponsive } from "../theme/responsive";
@@ -80,6 +80,12 @@ export default function EditProfile() {
       await refreshProfile();
       setSuccess("Profile picture updated.");
     } catch (err) {
+      console.log("=== AVATAR UPLOAD ERROR ===");
+      console.log("Message:", err.message);
+      console.log(
+        "Full error:",
+        JSON.stringify(err, Object.getOwnPropertyNames(err)),
+      );
       setError("Couldn't upload photo. Please try again.");
     } finally {
       setSavingAvatar(false);
