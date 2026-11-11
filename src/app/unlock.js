@@ -1,12 +1,26 @@
 // src/app/unlock.js
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, StyleSheet, Text, View } from "react-native";
 import Button from "../components/Button";
 import { colors } from "../theme/colors";
 
 export default function Unlock() {
   const router = useRouter();
+  const { pointId, pointsEarned } = useLocalSearchParams();
+
+  // Safely parse pointsEarned, falling back to 10 if missing or invalid
+  const parsedPoints = Number(pointsEarned);
+  const earnedPoints =
+    !isNaN(parsedPoints) && parsedPoints > 0 ? parsedPoints : 10;
+
+  const handleViewStory = () => {
+    if (pointId) {
+      router.push({ pathname: "/story", params: { pointId } });
+    } else {
+      router.back();
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -17,11 +31,11 @@ export default function Unlock() {
 
       <View style={styles.pointsPill}>
         <Ionicons name="star" size={16} color={colors.terracotta} />
-        <Text style={styles.pointsText}>+10 Points</Text>
+        <Text style={styles.pointsText}>+{earnedPoints} Points</Text>
       </View>
 
       <View style={{ marginTop: 40, width: "100%" }}>
-        <Button title="View Story" onPress={() => router.back()} />
+        <Button title="View Story" onPress={handleViewStory} />
       </View>
     </SafeAreaView>
   );
