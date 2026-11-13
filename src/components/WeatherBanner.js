@@ -13,7 +13,14 @@ export default function WeatherBanner({ reasonText, onPressWhy }) {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.text}>{reasonText}</Text>
-        <Pressable onPress={onPressWhy}>
+        <Pressable
+          onPress={onPressWhy}
+          hitSlop={12}
+          style={({ pressed }) => [
+            styles.linkContainer,
+            pressed && styles.linkPressed,
+          ]}
+        >
           <Text style={styles.link}>Why this order?</Text>
         </Pressable>
       </View>
@@ -38,11 +45,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   text: { color: colors.white, fontSize: 13, fontWeight: "600" },
+  linkContainer: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+    paddingVertical: 2,
+  },
+  linkPressed: {
+    opacity: 0.7,
+  },
   link: {
     color: colors.terracotta,
     fontSize: 12.5,
     fontWeight: "600",
-    marginTop: 4,
     textDecorationLine: "underline",
   },
 });
