@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import ImagePickerField from "../../components/admin/ImagePickerField";
 import { colors } from "../../theme/colors";
 
 // TODO (Member 2): load points from Firestore for the selector.
@@ -26,6 +27,7 @@ export default function ContentForm() {
   const [point, setPoint] = useState("");
   const [storyTitle, setStoryTitle] = useState("");
   const [storyText, setStoryText] = useState("");
+  const [storyImage, setStoryImage] = useState("");
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState({ A: "", B: "", C: "" });
   const [correct, setCorrect] = useState("");
@@ -65,9 +67,9 @@ export default function ContentForm() {
       return;
     }
 
-    // TODO (Member 2): save to Firestore here.
-    // Field names (point, storyTitle, storyText, question, options, correct, quizPoints)
-    // must match the Firestore schema.
+    // TODO (Member 2): upload storyImage, then save to Firestore here.
+    // Field names (point, storyTitle, storyText, storyImage, question, options,
+    // correct, quizPoints) must match the Firestore schema.
     Alert.alert("Saved", "Content added.", [
       { text: "OK", onPress: () => router.back() },
     ]);
@@ -127,12 +129,10 @@ export default function ContentForm() {
           />
 
           <Text style={styles.label}>Media</Text>
-          {/* TODO (Steps 15-16): replace with real image, audio and video pickers. */}
-          <View style={styles.mediaBox}>
-            <Text style={styles.mediaText}>
-              Image, audio and video upload coming in the next steps
-            </Text>
-          </View>
+          <Text style={styles.hint}>Image</Text>
+          <ImagePickerField value={storyImage} onChange={setStoryImage} />
+          {/* TODO (Step 16): add audio and video pickers. */}
+          <Text style={styles.hint}>Audio and video upload coming in the next step</Text>
 
           <Text style={styles.section}>Quiz</Text>
 
@@ -203,6 +203,7 @@ const styles = StyleSheet.create({
   section: { fontSize: 16, fontWeight: "700", color: colors.ink, marginTop: 8, marginBottom: 10 },
   error: { color: "#C0392B", fontSize: 12.5, marginBottom: 12, fontWeight: "600" },
   label: { fontSize: 13, fontWeight: "600", color: colors.ink, marginBottom: 6 },
+  hint: { fontSize: 12, color: colors.gray, marginBottom: 6 },
   input: {
     backgroundColor: colors.white,
     borderWidth: 1,
@@ -225,17 +226,6 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.teal, borderColor: colors.teal },
   chipText: { color: colors.ink, fontSize: 13, fontWeight: "600" },
   chipTextActive: { color: colors.white },
-  mediaBox: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: colors.cardBorder,
-    borderRadius: 12,
-    padding: 20,
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  mediaText: { color: colors.gray, fontSize: 13, textAlign: "center" },
   saveBtn: {
     backgroundColor: colors.teal,
     borderRadius: 12,
