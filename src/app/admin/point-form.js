@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import Button from "../../components/Button";
 import { colors } from "../../theme/colors";
 
 // TODO (Member 2): load destinations from Firestore for the selector.
@@ -177,14 +178,12 @@ export default function PointForm() {
             </View>
           </View>
 
-          <Pressable style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveText}>
-              {isEdit ? "Save Changes" : "Save Point"}
-            </Text>
-          </Pressable>
-          <Pressable style={styles.cancelBtn} onPress={() => router.back()}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </Pressable>
+          <View style={styles.btnWrap}>
+            <Button title={isEdit ? "Save Changes" : "Save Point"} onPress={handleSave} />
+          </View>
+          <View style={styles.btnWrap}>
+            <Button title="Cancel" variant="secondary" onPress={() => router.back()} />
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -221,14 +220,5 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.teal, borderColor: colors.teal },
   chipText: { color: colors.ink, fontSize: 13, fontWeight: "600" },
   chipTextActive: { color: colors.white },
-  saveBtn: {
-    backgroundColor: colors.teal,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    marginTop: 6,
-  },
-  saveText: { color: colors.white, fontWeight: "700", fontSize: 15 },
-  cancelBtn: { padding: 14, alignItems: "center", marginTop: 6 },
-  cancelText: { color: colors.gray, fontWeight: "600", fontSize: 14 },
+  btnWrap: { marginTop: 10 },
 });

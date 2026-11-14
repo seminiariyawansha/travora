@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import Button from "../../components/Button";
 import { colors } from "../../theme/colors";
 
 // TODO (Member 2): replace this dummy list with destinations loaded from Firestore.
@@ -83,12 +84,12 @@ export default function AdminDestinations() {
         }
       />
 
-      <Pressable
-        style={[styles.addBtn, { bottom: insets.bottom + 24 }]}
-        onPress={() => router.push("/admin/destination-form")}
-      >
-        <Text style={styles.addText}>+ Add Destination</Text>
-      </Pressable>
+      <View style={[styles.addWrap, { bottom: insets.bottom + 24 }]}>
+        <Button
+          title="+ Add Destination"
+          onPress={() => router.push("/admin/destination-form")}
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -116,16 +117,7 @@ const styles = StyleSheet.create({
   editBtn: { backgroundColor: colors.sand, borderWidth: 1, borderColor: colors.cardBorder },
   editText: { color: colors.teal, fontWeight: "600", fontSize: 13 },
   deleteBtn: { backgroundColor: "#FDECEA" },
-  deleteText: { color: "#C0392B", fontWeight: "600", fontSize: 13 },
-  empty: { textAlign: "center", color: colors.gray, marginTop: 40 },
-  addBtn: {
-    position: "absolute",
-    left: 24,
-    right: 24,
-    backgroundColor: colors.teal,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-  },
-  addText: { color: colors.white, fontWeight: "700", fontSize: 15 },
-});
+   deleteText: { color: "#C0392B", fontWeight: "600", fontSize: 13 },
+   empty: { textAlign: "center", color: colors.gray, marginTop: 40 },
+   addWrap: { position: "absolute", left: 24, right: 24 },
+ });
