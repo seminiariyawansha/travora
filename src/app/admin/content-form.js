@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ImagePickerField from "../../components/admin/ImagePickerField";
+import MediaPickerField from "../../components/admin/MediaPickerField";
 import { colors } from "../../theme/colors";
 
 // TODO (Member 2): load points from Firestore for the selector.
@@ -28,6 +29,8 @@ export default function ContentForm() {
   const [storyTitle, setStoryTitle] = useState("");
   const [storyText, setStoryText] = useState("");
   const [storyImage, setStoryImage] = useState("");
+  const [video, setVideo] = useState(null);
+  const [audio, setAudio] = useState(null);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState({ A: "", B: "", C: "" });
   const [correct, setCorrect] = useState("");
@@ -67,9 +70,9 @@ export default function ContentForm() {
       return;
     }
 
-    // TODO (Member 2): upload storyImage, then save to Firestore here.
-    // Field names (point, storyTitle, storyText, storyImage, question, options,
-    // correct, quizPoints) must match the Firestore schema.
+    // TODO (Member 2): upload storyImage, video and audio, then save to Firestore here.
+    // Field names (point, storyTitle, storyText, storyImage, video, audio, question,
+    // options, correct, quizPoints) must match the Firestore schema.
     Alert.alert("Saved", "Content added.", [
       { text: "OK", onPress: () => router.back() },
     ]);
@@ -128,11 +131,13 @@ export default function ContentForm() {
             multiline
           />
 
-          <Text style={styles.label}>Media</Text>
+          <Text style={styles.label}>Media (optional)</Text>
           <Text style={styles.hint}>Image</Text>
           <ImagePickerField value={storyImage} onChange={setStoryImage} />
-          {/* TODO (Step 16): add audio and video pickers. */}
-          <Text style={styles.hint}>Audio and video upload coming in the next step</Text>
+          <Text style={styles.hint}>Video</Text>
+          <MediaPickerField kind="video" value={video} onChange={setVideo} />
+          <Text style={styles.hint}>Audio story</Text>
+          <MediaPickerField kind="audio" value={audio} onChange={setAudio} />
 
           <Text style={styles.section}>Quiz</Text>
 
