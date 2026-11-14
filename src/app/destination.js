@@ -16,6 +16,7 @@ import ScreenContainer from "../components/ScreenContainer";
 import Tag from "../components/Tag";
 import WeatherBanner from "../components/WeatherBanner";
 import { downloadDestination } from "../db/downloadService";
+import { getCachedPoints } from "../db/offlineContentService";
 import { getDestination, getPoints } from "../services/destinationService";
 import { auth } from "../services/firebaseConfig";
 import { getUserProgress } from "../services/progressService";
@@ -45,92 +46,127 @@ export default function Destination() {
   // Hero height scales with the screen, but stays within a sensible range
   const heroHeight = Math.min(Math.max(height * 0.2, 150), 230);
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
+  const loadScreen = useCallback(
+    async (isActive) => {
+      setLoading(true);
+      setLoadError("");
+      setWeatherInfo(null);
 
-      async function load() {
-        setLoading(true);
-        setLoadError("");
-        setWeatherInfo(null);
+      // 1. Try Firebase first (works when online)
+      let dest = null;
+      let rawPoints = [];
+      let onlineFailed = false;
 
+      try {
+        dest = await getDestination(destinationId);
+        rawPoints = await getPoints(destinationId);
+      } catch (error) {
+        onlineFailed = true;
+        console.log("Online load failed, trying offline data:", error.message);
+      }
+
+      // 2. If Firebase gave no points, fall back to the downloaded (offline) points
+      if (rawPoints.length === 0) {
         try {
-          // 1. Fetch destination details and points
-          const dest = await getDestination(destinationId);
-          const rawPoints = await getPoints(destinationId);
-
-          // 2. Fetch user progress (optional)
-          let unlockedIds = [];
-          try {
-            const userId = auth.currentUser?.uid ?? "guest";
-            const progress = await getUserProgress(userId, destinationId);
-            unlockedIds = progress?.unlockedPoints ?? [];
-          } catch (progressError) {
-            console.log("Progress load failed:", progressError.message);
-          }
-
-          if (!active) return;
-
-          // 3. Merge unlocked status into points
-          const mergedPoints = rawPoints.map((p) => ({
-            ...p,
-            unlocked: unlockedIds.includes(p.id),
-          }));
-
-          // 4. Display destination and points immediately (unblock UI)
-          setDestination(dest);
-          setPoints(mergedPoints);
-          setLoading(false);
-
-          // 5. Fetch weather asynchronously in the background
-          const lat = dest?.latitude != null ? Number(dest.latitude) : null;
-          const lng = dest?.longitude != null ? Number(dest.longitude) : null;
-
-          if (
-            lat !== null &&
-            lng !== null &&
-            !isNaN(lat) &&
-            !isNaN(lng) &&
-            Number.isFinite(lat) &&
-            Number.isFinite(lng)
-          ) {
-            try {
-              const weather = await getWeatherForDestination(destinationId, lat, lng);
-              if (!active) return;
-
-              if (weather) {
-                setWeatherInfo(weather);
-                // 6. Reorder points when weather arrives, preserving unlocked status
-                setPoints((currentPoints) => sortPointsByWeather(currentPoints, weather));
-              }
-            } catch (weatherErr) {
-              console.log("Weather fetch error on destination screen:", weatherErr?.message);
-            }
-          }
-        } catch (error) {
-          console.log("Destination load failed:", error.message);
-          if (active)
-            setLoadError(
-              "Couldn't load this destination. Check your connection.",
-            );
-        } finally {
-          if (active) setLoading(false);
+          const cached = await getCachedPoints(destinationId);
+          if (cached.length > 0) rawPoints = cached;
+        } catch (cacheError) {
+          console.log("Offline points load failed:", cacheError.message);
         }
       }
 
-      load();
+      // 3. Fetch user progress (optional)
+      let unlockedIds = [];
+      try {
+        const userId = auth.currentUser?.uid ?? "guest";
+        const progress = await getUserProgress(userId, destinationId);
+        unlockedIds = progress?.unlockedPoints ?? [];
+      } catch (progressError) {
+        console.log("Progress load failed:", progressError.message);
+      }
+
+      if (!isActive()) return;
+
+      // 4. Merge unlocked status into points
+      const mergedPoints = rawPoints.map((p) => ({
+        ...p,
+        unlocked: unlockedIds.includes(p.id),
+      }));
+
+      setDestination(dest);
+      setPoints(mergedPoints);
+
+      // Only show an error if we had no data at all
+      if (onlineFailed && mergedPoints.length === 0) {
+        setLoadError("Couldn't load this destination. Check your connection.");
+      }
+      setLoading(false);
+
+      // 5. Fetch weather in the background (live if online, cached if not)
+      const lat = dest?.latitude != null ? Number(dest.latitude) : null;
+      const lng = dest?.longitude != null ? Number(dest.longitude) : null;
+      const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+
+      try {
+        // Offline, coordinates aren't needed: the cached weather is used
+        const weather = await getWeatherForDestination(
+          destinationId,
+          hasCoords ? lat : null,
+          hasCoords ? lng : null,
+        );
+        if (!isActive()) return;
+
+        if (weather) {
+          setWeatherInfo(weather);
+          // 6. Reorder points when weather arrives, preserving unlocked status
+          setPoints((currentPoints) =>
+            sortPointsByWeather(currentPoints, weather),
+          );
+        }
+      } catch (weatherErr) {
+        console.log(
+          "Weather fetch error on destination screen:",
+          weatherErr?.message,
+        );
+      }
+    },
+    [destinationId],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      loadScreen(() => active);
       return () => {
         active = false;
       };
-    }, [destinationId]),
+    }, [loadScreen]),
   );
 
   async function handleDownload() {
     setDownloading(true);
     setDownloadMessage("");
     try {
-      await downloadDestination(destinationId);
-      setDownloadMessage("Downloaded. This destination now works offline.");
+      const result = await downloadDestination(destinationId);
+      console.log("Download result:", result);
+
+      const saved = result?.savedCount ?? result?.pointCount ?? 0;
+
+      if (saved > 0) {
+        setDownloadMessage(
+          `Downloaded ${saved} point(s). This destination now works offline.`,
+        );
+        // Refresh the list so downloaded points show up right away
+        loadScreen(() => true);
+      } else if (result?.pointCount === 0) {
+        setDownloadMessage(
+          "Nothing to download yet. An admin needs to add points first.",
+        );
+      } else {
+        setDownloadMessage(
+          "Points were found but could not be saved. Check that each point has content.",
+        );
+      }
     } catch (error) {
       console.log("Download failed:", error.message);
       setDownloadMessage("Download failed. Please try again.");

@@ -1,6 +1,11 @@
 // db/downloadService.js
+// Note: this project uses Expo SDK 57, where the classic download API lives in "expo-file-system/legacy"
 import * as FileSystem from "expo-file-system/legacy";
-import { getDestinations } from "../services/destinationService";
+import {
+  getDestination,
+  getPointContent,
+  getPoints,
+} from "../services/destinationService";
 import { getDb } from "./database";
 
 async function downloadFile(remoteUrl, localFileName) {
@@ -10,51 +15,70 @@ async function downloadFile(remoteUrl, localFileName) {
 }
 
 export async function downloadDestination(destinationId) {
-  const allDestinations = await getDestinations();
-  const destination = allDestinations.find((d) => d.id === destinationId);
-  if (!destination) {
-    throw new Error(`Destination "${destinationId}" not found`);
-  }
-
+  const destination = await getDestination(destinationId);
+  const points = await getPoints(destinationId);
   const db = await getDb();
 
-  // Download each image
-  const localImagePaths = [];
-  const images = destination.images || [];
-  for (let i = 0; i < images.length; i++) {
+  let savedCount = 0;
+  const skipped = []; // ids of points that could not be saved
+
+  for (const point of points) {
     try {
-      const localPath = await downloadFile(
-        images[i],
-        `${destinationId}_image_${i}.jpg`,
+      const content = await getPointContent(destinationId, point.id);
+      if (!content) {
+        skipped.push(point.id);
+        continue;
+      }
+
+      // Download each image
+      const localImagePaths = [];
+      for (let i = 0; i < (content.images || []).length; i++) {
+        const localPath = await downloadFile(
+          content.images[i],
+          `${point.id}_image_${i}.jpg`,
+        );
+        localImagePaths.push(localPath);
+      }
+
+      // Download the video, if there is one
+      let localVideoPath = null;
+      if (content.videoUrl) {
+        localVideoPath = await downloadFile(
+          content.videoUrl,
+          `${point.id}_video.mp4`,
+        );
+      }
+
+      // Save everything into the local database
+      await db.runAsync(
+        `INSERT OR REPLACE INTO cached_points
+         (id, destinationId, name, latitude, longitude, radiusMeters, indoorFriendly, pointsValue, storyText, imageLocalPaths, videoLocalPath)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          point.id,
+          destinationId,
+          point.name,
+          point.latitude,
+          point.longitude,
+          point.radiusMeters,
+          point.indoorFriendly ? 1 : 0,
+          point.pointsValue,
+          content.storyText,
+          JSON.stringify(localImagePaths),
+          localVideoPath,
+        ],
       );
-      localImagePaths.push(localPath);
-    } catch (e) {
-      console.log("Image download failed:", images[i], e);
+      savedCount++;
+    } catch (error) {
+      console.log("Could not download point", point.id, error);
+      skipped.push(point.id);
     }
   }
 
-  // Note: video is a YouTube link, not a direct file — can't be downloaded
-  // for offline playback this way, so we just keep the remote URL as a reference.
-  const videoLocalPath = destination.video || null;
-
-  await db.runAsync(
-    `INSERT OR REPLACE INTO cached_points
-     (id, destinationId, name, latitude, longitude, radiusMeters, indoorFriendly, pointsValue, storyText, imageLocalPaths, videoLocalPath)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      destination.id,
-      destination.id,
-      destination.name,
-      destination.latitude,
-      destination.longitude,
-      100, // default geofence radius (not in current Firestore model)
-      0, // default indoorFriendly
-      20, // default points value
-      destination.story,
-      JSON.stringify(localImagePaths),
-      videoLocalPath,
-    ],
-  );
-
-  return { destination, pointCount: 1 };
+  return {
+    destination,
+    pointCount: points.length, // points found in Firebase
+    savedCount, // points really saved on the phone
+    skipped, // points that failed or had no content
+  };
 }
