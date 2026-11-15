@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ImagePickerField from "../../components/admin/ImagePickerField";
+import MediaPickerField from "../../components/admin/MediaPickerField";
 import Button from "../../components/Button";
 import { getAllPoints, saveContent } from "../../services/adminService";
 import { uploadToCloudinary } from "../../services/cloudinaryService";
@@ -32,12 +33,16 @@ export default function ContentForm() {
   const [existingImages, setExistingImages] = useState([]);
   const [newImage, setNewImage] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
+  const [newVideo, setNewVideo] = useState(null);
+  const [existingAudio, setExistingAudio] = useState("");
+  const [newAudio, setNewAudio] = useState(null);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState({ A: "", B: "", C: "" });
   const [correct, setCorrect] = useState("");
   const [quizPoints, setQuizPoints] = useState("20");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -66,6 +71,9 @@ export default function ContentForm() {
     setExistingImages(Array.isArray(c.images) ? c.images : []);
     setNewImage("");
     setVideoUrl(c.videoUrl ?? "");
+    setNewVideo(null);
+    setExistingAudio(c.audioUrl ?? "");
+    setNewAudio(null);
     const q = c.quiz;
     setQuestion(q?.question ?? "");
     setOptions({
@@ -130,15 +138,31 @@ export default function ContentForm() {
     try {
       let images = existingImages;
       if (newImage) {
+        setStatus("Uploading image...");
         const url = await uploadToCloudinary(newImage, "image");
         images = [url];
       }
 
+      let finalVideoUrl = videoUrl.trim();
+      if (newVideo) {
+        setStatus("Uploading video (this can take a while)...");
+        finalVideoUrl = await uploadToCloudinary(newVideo.uri, "video");
+      }
+
+      // Cloudinary stores audio under the "video" resource type.
+      let audioUrl = existingAudio;
+      if (newAudio) {
+        setStatus("Uploading audio...");
+        audioUrl = await uploadToCloudinary(newAudio.uri, "video");
+      }
+
+      setStatus("Saving...");
       const content = {
         storyText: storyText.trim(),
         images,
-        videoUrl: videoUrl.trim(),
+        videoUrl: finalVideoUrl,
       };
+      if (audioUrl) content.audioUrl = audioUrl;
       if (quiz) content.quiz = quiz;
 
       await saveContent(selected.destinationId, selected.id, content);
@@ -149,10 +173,13 @@ export default function ContentForm() {
       if (e.code === "permission-denied") {
         setError("Permission denied. Ask Member 2 to allow admin writes in Firestore rules.");
       } else {
-        setError("Could not save. Check your connection and try again.");
+        setError(
+          "Could not save. Check your connection, and use a smaller file if you uploaded video or audio."
+        );
       }
     } finally {
       setSaving(false);
+      setStatus("");
     }
   }
 
@@ -224,7 +251,8 @@ export default function ContentForm() {
           ) : null}
           <ImagePickerField value={newImage} onChange={setNewImage} />
 
-          <Text style={styles.label}>Video link</Text>
+          <Text style={styles.label}>Video</Text>
+          <Text style={styles.hint}>Paste a link, or upload a file below (under 20 MB).</Text>
           <TextInput
             style={styles.input}
             placeholder="https://www.youtube.com/watch?v=..."
@@ -234,7 +262,15 @@ export default function ContentForm() {
             autoCapitalize="none"
             keyboardType="url"
           />
-          <Text style={styles.hint}>Video and audio file upload comes in the next step.</Text>
+          <MediaPickerField kind="video" value={newVideo} onChange={setNewVideo} />
+
+          <Text style={styles.label}>Audio story</Text>
+          {existingAudio && !newAudio ? (
+            <Text style={styles.hint}>
+              This point already has audio. Choosing a new file replaces it.
+            </Text>
+          ) : null}
+          <MediaPickerField kind="audio" value={newAudio} onChange={setNewAudio} />
 
           <Text style={styles.section}>Quiz (optional)</Text>
 
@@ -286,7 +322,10 @@ export default function ContentForm() {
           />
 
           {saving ? (
-            <ActivityIndicator color={colors.teal} style={{ marginTop: 10 }} />
+            <View style={{ marginTop: 10, alignItems: "center" }}>
+              <ActivityIndicator color={colors.teal} />
+              {status ? <Text style={styles.status}>{status}</Text> : null}
+            </View>
           ) : (
             <>
               <View style={styles.btnWrap}>
@@ -312,6 +351,7 @@ const styles = StyleSheet.create({
   error: { color: "#C0392B", fontSize: 12.5, marginBottom: 12, fontWeight: "600" },
   label: { fontSize: 13, fontWeight: "600", color: colors.ink, marginBottom: 6 },
   hint: { fontSize: 12, color: colors.gray, marginBottom: 10 },
+  status: { fontSize: 12, color: colors.gray, marginTop: 8 },
   input: {
     backgroundColor: colors.white,
     borderWidth: 1,
