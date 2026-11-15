@@ -8,21 +8,13 @@ import {
 } from "react-native-safe-area-context";
 import Button from "../../components/Button";
 import ScreenContainer from "../../components/ScreenContainer";
+import {
+  getUserProfile,
+  loginUser,
+  logoutUser,
+} from "../../services/authService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
-
-// TODO (Member 2): replace this with the real admin login using Firebase Auth,
-// including a check that the user has the admin role.
-async function adminLogin(email, password) {
-  // Temporary dummy check so the screen can be tested without the backend.
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  if (email === "admin@travora.com" && password === "admin123") {
-    return true;
-  }
-  const error = new Error("invalid");
-  error.code = "auth/invalid-credential";
-  throw error;
-}
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -42,10 +34,22 @@ export default function AdminLogin() {
 
     setLoading(true);
     try {
-      await adminLogin(email, password);
+      const user = await loginUser(email.trim(), password);
+      const profile = await getUserProfile(user.uid);
+
+      if (!profile || profile.role !== "admin") {
+        await logoutUser();
+        setError("This account is not an admin.");
+        return;
+      }
+
       router.replace("/admin/dashboard");
     } catch (err) {
-      if (err.code === "auth/invalid-credential") {
+      if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/wrong-password" ||
+        err.code === "auth/user-not-found"
+      ) {
         setError("Incorrect email or password.");
       } else {
         setError("Something went wrong. Please try again.");
