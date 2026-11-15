@@ -15,13 +15,18 @@ import Button from "../components/Button";
 import ScreenContainer from "../components/ScreenContainer";
 import Tag from "../components/Tag";
 import WeatherBanner from "../components/WeatherBanner";
-import { mockWeather } from "../data/mockData"; // still mock until Member 5's weather is wired
 import { downloadDestination } from "../db/downloadService";
 import { getDestination, getPoints } from "../services/destinationService";
 import { auth } from "../services/firebaseConfig";
 import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
 import { useResponsive } from "../theme/responsive";
+import { getWeatherForDestination } from "../weather/weatherFetchService";
+import {
+  getBannerWeatherReason,
+  showWeatherExplanationAlert,
+} from "../weather/weatherReasonService";
+import { sortPointsByWeather } from "../weather/weatherSortingService";
 
 export default function Destination() {
   const router = useRouter();
@@ -31,6 +36,7 @@ export default function Destination() {
 
   const [destination, setDestination] = useState(null);
   const [points, setPoints] = useState([]);
+  const [weatherInfo, setWeatherInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [downloading, setDownloading] = useState(false);
@@ -46,11 +52,14 @@ export default function Destination() {
       async function load() {
         setLoading(true);
         setLoadError("");
+        setWeatherInfo(null);
+
         try {
+          // 1. Fetch destination details and points
           const dest = await getDestination(destinationId);
           const rawPoints = await getPoints(destinationId);
 
-          // Progress is optional: if it fails, still show the points
+          // 2. Fetch user progress (optional)
           let unlockedIds = [];
           try {
             const userId = auth.currentUser?.uid ?? "guest";
@@ -61,13 +70,43 @@ export default function Destination() {
           }
 
           if (!active) return;
+
+          // 3. Merge unlocked status into points
+          const mergedPoints = rawPoints.map((p) => ({
+            ...p,
+            unlocked: unlockedIds.includes(p.id),
+          }));
+
+          // 4. Display destination and points immediately (unblock UI)
           setDestination(dest);
-          setPoints(
-            rawPoints.map((p) => ({
-              ...p,
-              unlocked: unlockedIds.includes(p.id),
-            })),
-          );
+          setPoints(mergedPoints);
+          setLoading(false);
+
+          // 5. Fetch weather asynchronously in the background
+          const lat = dest?.latitude != null ? Number(dest.latitude) : null;
+          const lng = dest?.longitude != null ? Number(dest.longitude) : null;
+
+          if (
+            lat !== null &&
+            lng !== null &&
+            !isNaN(lat) &&
+            !isNaN(lng) &&
+            Number.isFinite(lat) &&
+            Number.isFinite(lng)
+          ) {
+            try {
+              const weather = await getWeatherForDestination(destinationId, lat, lng);
+              if (!active) return;
+
+              if (weather) {
+                setWeatherInfo(weather);
+                // 6. Reorder points when weather arrives, preserving unlocked status
+                setPoints((currentPoints) => sortPointsByWeather(currentPoints, weather));
+              }
+            } catch (weatherErr) {
+              console.log("Weather fetch error on destination screen:", weatherErr?.message);
+            }
+          }
         } catch (error) {
           console.log("Destination load failed:", error.message);
           if (active)
@@ -100,6 +139,12 @@ export default function Destination() {
     }
   }
 
+  const handlePressWhy = () => {
+    showWeatherExplanationAlert(weatherInfo);
+  };
+
+  const bannerReason = getBannerWeatherReason(weatherInfo);
+
   return (
     <View style={styles.container}>
       {/* Hero spans the full width, even on tablets */}
@@ -127,8 +172,8 @@ export default function Destination() {
           showsVerticalScrollIndicator={false}
         >
           <WeatherBanner
-            reasonText={mockWeather.reasonText}
-            onPressWhy={() => {}}
+            reasonText={bannerReason}
+            onPressWhy={handlePressWhy}
           />
 
           {loading && (

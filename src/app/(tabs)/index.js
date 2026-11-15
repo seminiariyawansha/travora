@@ -15,10 +15,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenContainer from "../../components/ScreenContainer";
 import WeatherBanner from "../../components/WeatherBanner";
 import { useAuth } from "../../context/AuthContext";
-import { mockWeather } from "../../data/mockData";
 import { getDestinations } from "../../services/destinationService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
+import { getWeatherForDestination } from "../../weather/weatherFetchService";
+import {
+  getBannerWeatherReason,
+  showWeatherExplanationAlert,
+} from "../../weather/weatherReasonService";
 
 const SERVICES = [
   { key: "weather", label: "Weather", icon: "rainy-outline" },
@@ -32,6 +36,7 @@ export default function Home() {
   const { moderateScale } = useResponsive();
   const { user, profile } = useAuth();
   const [destinations, setDestinations] = useState([]);
+  const [weatherInfo, setWeatherInfo] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Always read the live logged-in user, so edits made on the
@@ -43,13 +48,63 @@ export default function Home() {
 
   useFocusEffect(
     useCallback(() => {
-      getDestinations().then(setDestinations);
+      let active = true;
+
+      async function fetchHomeData() {
+        try {
+          const list = await getDestinations();
+          if (!active) return;
+          setDestinations(list);
+
+          // Find first destination with valid coordinates
+          const destWithCoords = list.find(
+            (d) =>
+              d?.latitude != null &&
+              d?.longitude != null &&
+              !isNaN(Number(d.latitude)) &&
+              !isNaN(Number(d.longitude)) &&
+              Number.isFinite(Number(d.latitude)) &&
+              Number.isFinite(Number(d.longitude))
+          );
+
+          if (destWithCoords) {
+            try {
+              const weather = await getWeatherForDestination(
+                destWithCoords.id,
+                Number(destWithCoords.latitude),
+                Number(destWithCoords.longitude)
+              );
+              if (active) {
+                setWeatherInfo(weather);
+              }
+            } catch (weatherError) {
+              console.log("Home weather fetch error:", weatherError?.message);
+              if (active) setWeatherInfo(null);
+            }
+          } else {
+            if (active) setWeatherInfo(null);
+          }
+        } catch (error) {
+          console.log("Failed to load destinations on home:", error?.message);
+        }
+      }
+
+      fetchHomeData();
+      return () => {
+        active = false;
+      };
     }, []),
   );
 
   const filteredDestinations = destinations.filter((dest) =>
     dest.name?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
+  const handlePressWhy = () => {
+    showWeatherExplanationAlert(weatherInfo);
+  };
+
+  const bannerReason = getBannerWeatherReason(weatherInfo);
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -191,8 +246,8 @@ export default function Home() {
               </View>
 
               <WeatherBanner
-                reasonText={mockWeather.reasonText}
-                onPressWhy={() => {}}
+                reasonText={bannerReason}
+                onPressWhy={handlePressWhy}
               />
             </>
           )}
