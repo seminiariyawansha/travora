@@ -1,34 +1,70 @@
 // src/app/admin/points.js
-import { useRouter } from "expo-router";
-import { useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Button from "../../components/Button";
+import { deletePoint, getAllPoints } from "../../services/adminService";
 import { colors } from "../../theme/colors";
-
-// TODO (Member 2): replace this dummy list with points loaded from Firestore.
-const INITIAL_POINTS = [
-  { id: "1", title: "Galle Lighthouse", destination: "Galle Fort", radius: 100, points: 20 },
-  { id: "2", title: "Dutch Hospital", destination: "Galle Fort", radius: 100, points: 20 },
-  { id: "3", title: "Lion Gate", destination: "Sigiriya", radius: 150, points: 30 },
-];
 
 export default function AdminPoints() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [items, setItems] = useState(INITIAL_POINTS);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // Reload every time this screen comes back into view (e.g. after saving).
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      async function load() {
+        setError("");
+        try {
+          const list = await getAllPoints();
+          if (active) setItems(list);
+        } catch (e) {
+          if (active) setError("Could not load points.");
+        } finally {
+          if (active) setLoading(false);
+        }
+      }
+      load();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   function handleDelete(item) {
     Alert.alert(
       "Delete point",
-      `Are you sure you want to delete "${item.title}"?`,
+      `Are you sure you want to delete "${item.name}"?`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
-          // TODO (Member 2): delete from Firestore here.
-          onPress: () => setItems((list) => list.filter((p) => p.id !== item.id)),
+          onPress: async () => {
+            try {
+              await deletePoint(item.destinationId, item.id);
+              setItems((list) =>
+                list.filter(
+                  (p) => !(p.id === item.id && p.destinationId === item.destinationId)
+                )
+              );
+            } catch (e) {
+              Alert.alert("Error", "Could not delete. Check your permissions.");
+            }
+          },
         },
       ]
     );
@@ -38,9 +74,9 @@ export default function AdminPoints() {
     return (
       <View style={styles.card}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{item.title}</Text>
+          <Text style={styles.name}>{item.name}</Text>
           <Text style={styles.meta}>
-            {item.destination} · {item.radius}m · {item.points} pts
+            {item.destinationName} · {item.radiusMeters}m · {item.pointsValue} pts
           </Text>
         </View>
         <Pressable
@@ -48,7 +84,7 @@ export default function AdminPoints() {
           onPress={() =>
             router.push({
               pathname: "/admin/point-form",
-              params: { id: item.id },
+              params: { id: item.id, destinationId: item.destinationId },
             })
           }
         >
@@ -73,15 +109,20 @@ export default function AdminPoints() {
         <Text style={styles.title}>Location Points</Text>
       </View>
 
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
-        ListEmptyComponent={
-          <Text style={styles.empty}>No points yet. Add one below.</Text>
-        }
-      />
+      {loading ? (
+        <ActivityIndicator color={colors.teal} style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item) => `${item.destinationId}/${item.id}`}
+          renderItem={renderItem}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
+          ListHeaderComponent={error ? <Text style={styles.error}>{error}</Text> : null}
+          ListEmptyComponent={
+            <Text style={styles.empty}>No points yet. Add one below.</Text>
+          }
+        />
+      )}
 
       <View style={[styles.addWrap, { bottom: insets.bottom + 24 }]}>
         <Button title="+ Add Point" onPress={() => router.push("/admin/point-form")} />
@@ -114,6 +155,7 @@ const styles = StyleSheet.create({
   editText: { color: colors.teal, fontWeight: "600", fontSize: 13 },
   deleteBtn: { backgroundColor: "#FDECEA" },
   deleteText: { color: "#C0392B", fontWeight: "600", fontSize: 13 },
+  error: { color: "#C0392B", fontSize: 12.5, marginBottom: 12, fontWeight: "600" },
   empty: { textAlign: "center", color: colors.gray, marginTop: 40 },
   addWrap: { position: "absolute", left: 24, right: 24 },
 });
