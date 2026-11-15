@@ -1,20 +1,28 @@
 // src/app/admin/dashboard.js
-import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { getAllPoints } from "../../services/adminService";
+import { logoutUser } from "../../services/authService";
+import { getDestinations } from "../../services/destinationService";
 import { colors } from "../../theme/colors";
 
-// TODO (Member 2): replace these dummy numbers with real counts from Firestore.
-const DUMMY_STATS = {
-  destinations: 3,
-  points: 12,
-  contents: 12,
-};
-
-function StatCard({ label, value }) {
+function StatCard({ label, value, loading }) {
   return (
     <View style={styles.statCard}>
-      <Text style={styles.statValue}>{value}</Text>
+      {loading ? (
+        <ActivityIndicator color={colors.teal} />
+      ) : (
+        <Text style={styles.statValue}>{value}</Text>
+      )}
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
@@ -34,6 +42,52 @@ function MenuItem({ title, subtitle, onPress }) {
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const [stats, setStats] = useState({ destinations: 0, points: 0, contents: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // Reload the counts every time the dashboard comes back into view.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      async function load() {
+        setError("");
+        try {
+          const [dests, points] = await Promise.all([
+            getDestinations(),
+            getAllPoints(),
+          ]);
+          const contents = points.filter(
+            (p) => (p.content?.storyText ?? "").trim() !== ""
+          ).length;
+          if (active) {
+            setStats({
+              destinations: dests.length,
+              points: points.length,
+              contents,
+            });
+          }
+        } catch (e) {
+          if (active) setError("Could not load the counts.");
+        } finally {
+          if (active) setLoading(false);
+        }
+      }
+      load();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
+  async function handleLogout() {
+    try {
+      await logoutUser();
+    } catch (e) {
+      // Even if sign-out fails, go back to the login screen.
+    }
+    router.replace("/admin/login");
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -41,10 +95,12 @@ export default function AdminDashboard() {
         <Text style={styles.title}>Admin Dashboard</Text>
         <Text style={styles.subtitle}>Manage destinations and content</Text>
 
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
         <View style={styles.statsRow}>
-          <StatCard label="Destinations" value={DUMMY_STATS.destinations} />
-          <StatCard label="Points" value={DUMMY_STATS.points} />
-          <StatCard label="Contents" value={DUMMY_STATS.contents} />
+          <StatCard label="Destinations" value={stats.destinations} loading={loading} />
+          <StatCard label="Points" value={stats.points} loading={loading} />
+          <StatCard label="Contents" value={stats.contents} loading={loading} />
         </View>
 
         <Text style={styles.section}>Manage</Text>
@@ -65,10 +121,7 @@ export default function AdminDashboard() {
           onPress={() => router.push("/admin/content-form")}
         />
 
-        <Pressable
-          style={styles.logout}
-          onPress={() => router.replace("/admin/login")}
-        >
+        <Pressable style={styles.logout} onPress={handleLogout}>
           <Text style={styles.logoutText}>Log out</Text>
         </Pressable>
       </ScrollView>
@@ -81,6 +134,7 @@ const styles = StyleSheet.create({
   content: { padding: 24, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: "700", color: colors.ink },
   subtitle: { color: colors.gray, marginTop: 4, marginBottom: 20, fontSize: 13 },
+  error: { color: "#C0392B", fontSize: 12.5, marginBottom: 12, fontWeight: "600" },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
   statCard: {
     flex: 1,
@@ -90,6 +144,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
+    minHeight: 80,
+    justifyContent: "center",
   },
   statValue: { fontSize: 24, fontWeight: "700", color: colors.teal },
   statLabel: { fontSize: 12, color: colors.gray, marginTop: 4 },
