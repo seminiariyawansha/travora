@@ -1,7 +1,8 @@
 // src/app/admin/content-form.js
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -14,69 +15,153 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ImagePickerField from "../../components/admin/ImagePickerField";
-import MediaPickerField from "../../components/admin/MediaPickerField";
 import Button from "../../components/Button";
+import { getAllPoints, saveContent } from "../../services/adminService";
+import { uploadToCloudinary } from "../../services/cloudinaryService";
 import { colors } from "../../theme/colors";
 
-// TODO (Member 2): load points from Firestore for the selector.
-const POINTS = ["Galle Lighthouse", "Dutch Hospital", "Lion Gate"];
 const OPTION_KEYS = ["A", "B", "C"];
 
 export default function ContentForm() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [point, setPoint] = useState("");
-  const [storyTitle, setStoryTitle] = useState("");
+  const [points, setPoints] = useState([]);
+  const [selected, setSelected] = useState(null); // { destinationId, id, ... }
   const [storyText, setStoryText] = useState("");
-  const [storyImage, setStoryImage] = useState("");
-  const [video, setVideo] = useState(null);
-  const [audio, setAudio] = useState(null);
+  const [existingImages, setExistingImages] = useState([]);
+  const [newImage, setNewImage] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState({ A: "", B: "", C: "" });
   const [correct, setCorrect] = useState("");
   const [quizPoints, setQuizPoints] = useState("20");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const list = await getAllPoints();
+        if (active) setPoints(list);
+      } catch (e) {
+        if (active) setError("Could not load points.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function choosePoint(p) {
+    setSelected(p);
+    setError("");
+    const c = p.content ?? {};
+    setStoryText(c.storyText ?? "");
+    setExistingImages(Array.isArray(c.images) ? c.images : []);
+    setNewImage("");
+    setVideoUrl(c.videoUrl ?? "");
+    const q = c.quiz;
+    setQuestion(q?.question ?? "");
+    setOptions({
+      A: q?.options?.A ?? "",
+      B: q?.options?.B ?? "",
+      C: q?.options?.C ?? "",
+    });
+    setCorrect(q?.correct ?? "");
+    setQuizPoints(q?.points != null ? String(q.points) : "20");
+  }
 
   function setOption(key, value) {
     setOptions((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleSave() {
+  async function handleSave() {
     setError("");
 
-    if (!point) {
+    if (!selected) {
       setError("Please choose a point.");
       return;
     }
-    if (!storyTitle.trim() || !storyText.trim()) {
-      setError("Story title and story text are required.");
-      return;
-    }
-    if (!question.trim()) {
-      setError("Quiz question is required.");
-      return;
-    }
-    if (OPTION_KEYS.some((k) => !options[k].trim())) {
-      setError("Please fill in all three answer options.");
-      return;
-    }
-    if (!correct) {
-      setError("Please choose the correct answer.");
-      return;
-    }
-    const pts = Number(quizPoints);
-    if (Number.isNaN(pts) || pts < 0) {
-      setError("Quiz points must be 0 or more.");
+    if (!storyText.trim()) {
+      setError("Story text is required.");
       return;
     }
 
-    // TODO (Member 2): upload storyImage, video and audio, then save to Firestore here.
-    // Field names (point, storyTitle, storyText, storyImage, video, audio, question,
-    // options, correct, quizPoints) must match the Firestore schema.
-    Alert.alert("Saved", "Content added.", [
-      { text: "OK", onPress: () => router.back() },
-    ]);
+    const hasQuiz =
+      question.trim() || OPTION_KEYS.some((k) => options[k].trim()) || correct;
+    let quiz = null;
+    if (hasQuiz) {
+      if (!question.trim()) {
+        setError("Quiz question is required if you add a quiz.");
+        return;
+      }
+      if (OPTION_KEYS.some((k) => !options[k].trim())) {
+        setError("Please fill in all three answer options.");
+        return;
+      }
+      if (!correct) {
+        setError("Please choose the correct answer.");
+        return;
+      }
+      const pts = Number(quizPoints);
+      if (Number.isNaN(pts) || pts < 0) {
+        setError("Quiz points must be 0 or more.");
+        return;
+      }
+      quiz = {
+        question: question.trim(),
+        options: {
+          A: options.A.trim(),
+          B: options.B.trim(),
+          C: options.C.trim(),
+        },
+        correct,
+        points: pts,
+      };
+    }
+
+    setSaving(true);
+    try {
+      let images = existingImages;
+      if (newImage) {
+        const url = await uploadToCloudinary(newImage, "image");
+        images = [url];
+      }
+
+      const content = {
+        storyText: storyText.trim(),
+        images,
+        videoUrl: videoUrl.trim(),
+      };
+      if (quiz) content.quiz = quiz;
+
+      await saveContent(selected.destinationId, selected.id, content);
+      Alert.alert("Saved", "Content saved.", [
+        { text: "OK", onPress: () => router.back() },
+      ]);
+    } catch (e) {
+      if (e.code === "permission-denied") {
+        setError("Permission denied. Ask Member 2 to allow admin writes in Firestore rules.");
+      } else {
+        setError("Could not save. Check your connection and try again.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ActivityIndicator color={colors.teal} style={{ marginTop: 80 }} />
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -97,30 +182,29 @@ export default function ContentForm() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <Text style={styles.label}>Point</Text>
-          <View style={styles.chipRow}>
-            {POINTS.map((p) => (
-              <Pressable
-                key={p}
-                style={[styles.chip, point === p && styles.chipActive]}
-                onPress={() => setPoint(p)}
-              >
-                <Text style={[styles.chipText, point === p && styles.chipTextActive]}>
-                  {p}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          {points.length === 0 ? (
+            <Text style={styles.hint}>No points yet. Add a point first.</Text>
+          ) : (
+            <View style={styles.chipRow}>
+              {points.map((p) => {
+                const active =
+                  selected?.id === p.id && selected?.destinationId === p.destinationId;
+                return (
+                  <Pressable
+                    key={`${p.destinationId}/${p.id}`}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => choosePoint(p)}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                      {p.destinationName} · {p.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
 
           <Text style={styles.section}>Story</Text>
-
-          <Text style={styles.label}>Story title</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. The Lighthouse of Galle Fort"
-            placeholderTextColor={colors.gray}
-            value={storyTitle}
-            onChangeText={setStoryTitle}
-          />
 
           <Text style={styles.label}>Story text</Text>
           <TextInput
@@ -132,15 +216,27 @@ export default function ContentForm() {
             multiline
           />
 
-          <Text style={styles.label}>Media (optional)</Text>
-          <Text style={styles.hint}>Image</Text>
-          <ImagePickerField value={storyImage} onChange={setStoryImage} />
-          <Text style={styles.hint}>Video</Text>
-          <MediaPickerField kind="video" value={video} onChange={setVideo} />
-          <Text style={styles.hint}>Audio story</Text>
-          <MediaPickerField kind="audio" value={audio} onChange={setAudio} />
+          <Text style={styles.label}>Image</Text>
+          {existingImages.length > 0 && !newImage ? (
+            <Text style={styles.hint}>
+              This point has {existingImages.length} image(s). Choosing a new one replaces them.
+            </Text>
+          ) : null}
+          <ImagePickerField value={newImage} onChange={setNewImage} />
 
-          <Text style={styles.section}>Quiz</Text>
+          <Text style={styles.label}>Video link</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="https://www.youtube.com/watch?v=..."
+            placeholderTextColor={colors.gray}
+            value={videoUrl}
+            onChangeText={setVideoUrl}
+            autoCapitalize="none"
+            keyboardType="url"
+          />
+          <Text style={styles.hint}>Video and audio file upload comes in the next step.</Text>
+
+          <Text style={styles.section}>Quiz (optional)</Text>
 
           <Text style={styles.label}>Question</Text>
           <TextInput
@@ -189,12 +285,18 @@ export default function ContentForm() {
             keyboardType="number-pad"
           />
 
-          <View style={styles.btnWrap}>
-            <Button title="Save Content" onPress={handleSave} />
-          </View>
-          <View style={styles.btnWrap}>
-            <Button title="Cancel" variant="secondary" onPress={() => router.back()} />
-          </View>
+          {saving ? (
+            <ActivityIndicator color={colors.teal} style={{ marginTop: 10 }} />
+          ) : (
+            <>
+              <View style={styles.btnWrap}>
+                <Button title="Save Content" onPress={handleSave} />
+              </View>
+              <View style={styles.btnWrap}>
+                <Button title="Cancel" variant="secondary" onPress={() => router.back()} />
+              </View>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -209,7 +311,7 @@ const styles = StyleSheet.create({
   section: { fontSize: 16, fontWeight: "700", color: colors.ink, marginTop: 8, marginBottom: 10 },
   error: { color: "#C0392B", fontSize: 12.5, marginBottom: 12, fontWeight: "600" },
   label: { fontSize: 13, fontWeight: "600", color: colors.ink, marginBottom: 6 },
-  hint: { fontSize: 12, color: colors.gray, marginBottom: 6 },
+  hint: { fontSize: 12, color: colors.gray, marginBottom: 10 },
   input: {
     backgroundColor: colors.white,
     borderWidth: 1,
