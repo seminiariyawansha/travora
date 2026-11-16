@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useState } from "react";
 import {
+    Image,
     Pressable,
     SafeAreaView,
     ScrollView,
@@ -12,6 +13,7 @@ import {
     View,
 } from "react-native";
 import Button from "../components/Button";
+import { getCachedPointById } from "../db/offlineContentService";
 import { resolvePointContent } from "../services/contentResolver";
 import { getPoints } from "../services/destinationService";
 import { colors } from "../theme/colors";
@@ -21,33 +23,75 @@ export default function Story() {
   const { pointId, destinationId } = useLocalSearchParams();
   const [point, setPoint] = useState(null);
   const [content, setContent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Data loading — always runs
+  // Data loading — always runs; falls back to SQLite cache offline
   useEffect(() => {
     async function load() {
-      const points = await getPoints(destinationId);
-      const found = points.find((p) => p.id === pointId);
-      const resolvedContent = await resolvePointContent(destinationId, pointId);
-      setPoint(found);
-      setContent(resolvedContent);
+      try {
+        setLoading(true);
+        let found = null;
+        let resolvedContent = null;
+
+        try {
+          const points = await getPoints(destinationId);
+          found = points.find((p) => p.id === pointId);
+          resolvedContent = await resolvePointContent(destinationId, pointId);
+        } catch (networkErr) {
+          // Offline fallback: SQLite cache
+          const cached = await getCachedPointById(pointId);
+          if (cached) {
+            found = cached;
+            resolvedContent = {
+              storyText: cached.story || "No story available offline.",
+              imageUrl: cached.imageUrl || null,
+              videoUrl: cached.videoUrl || null,
+            };
+          }
+        }
+
+        setPoint(found);
+        setContent(resolvedContent);
+      } catch (e) {
+        setError("Could not load story. Please try again.");
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, [pointId, destinationId]);
 
-  // Video player — always called, starts with no source
-  const player = useVideoPlayer(null, (player) => {
-    player.loop = false;
+  // Video player — always called (hook rules), starts with no source
+  const player = useVideoPlayer(null, (p) => {
+    p.loop = false;
   });
 
-  // Once content arrives, load its real video into the existing player
+  // Once content arrives with a video, load it into the player
   useEffect(() => {
     if (content?.videoUrl) {
       player.replace(content.videoUrl);
     }
   }, [content]);
 
-  // Every hook above runs on every render — only the JSX below is conditional
-  if (!point || !content) return null;
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <Text style={{ color: colors.ink }}>Loading story…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !point || !content) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <Text style={{ color: colors.ink }}>{error || "Story not found."}</Text>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
+          <Text style={{ color: colors.teal, fontWeight: "700" }}>Go Back</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -62,14 +106,26 @@ export default function Story() {
         <Text style={styles.title}>{point.name}</Text>
         <Text style={styles.storyText}>{content.storyText}</Text>
 
-        <View style={styles.videoBox}>
-          <VideoView
-            style={{ width: "100%", height: "100%" }}
-            player={player}
-            allowsFullscreen
-            nativeControls
+        {/* Show image if available and no video */}
+        {content.imageUrl && !content.videoUrl && (
+          <Image
+            source={{ uri: content.imageUrl }}
+            style={styles.mediaImage}
+            resizeMode="cover"
           />
-        </View>
+        )}
+
+        {/* Show video player only when there's an actual video URL */}
+        {content.videoUrl && (
+          <View style={styles.videoBox}>
+            <VideoView
+              style={{ width: "100%", height: "100%" }}
+              player={player}
+              allowsFullscreen
+              nativeControls
+            />
+          </View>
+        )}
 
         <Button
           title="Continue Exploring"
@@ -109,6 +165,11 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 21, fontWeight: "700", color: colors.ink },
   storyText: { fontSize: 13.5, lineHeight: 22, color: "#3A332C" },
+  mediaImage: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: 16,
+  },
   videoBox: {
     borderRadius: 16,
     overflow: "hidden",

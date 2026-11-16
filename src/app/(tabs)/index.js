@@ -104,6 +104,32 @@ export default function Home() {
     showWeatherExplanationAlert(weatherInfo);
   };
 
+  const handleServicePress = (key) => {
+    switch (key) {
+      case "stories":
+        // Navigate to map tab so user can pick a destination → stories
+        router.push({
+          pathname: "/destination",
+          params: { destinationId: destinations[0]?.id ?? "sigiriya" },
+        });
+        break;
+      case "location":
+        router.push("/(tabs)/map");
+        break;
+      case "weather":
+        showWeatherExplanationAlert(weatherInfo);
+        break;
+      case "offline":
+        router.push({
+          pathname: "/destination",
+          params: { destinationId: destinations[0]?.id ?? "sigiriya" },
+        });
+        break;
+      default:
+        break;
+    }
+  };
+
   const bannerReason = getBannerWeatherReason(weatherInfo);
 
   return (
@@ -224,7 +250,14 @@ export default function Home() {
                 </Text>
                 <View style={styles.servicesRow}>
                   {SERVICES.map((service) => (
-                    <View key={service.key} style={styles.serviceItem}>
+                    <Pressable
+                      key={service.key}
+                      style={({ pressed }) => [
+                        styles.serviceItem,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                      onPress={() => handleServicePress(service.key)}
+                    >
                       <View style={styles.serviceIcon}>
                         <Ionicons
                           name={service.icon}
@@ -240,7 +273,7 @@ export default function Home() {
                       >
                         {service.label}
                       </Text>
-                    </View>
+                    </Pressable>
                   ))}
                 </View>
               </View>
