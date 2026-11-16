@@ -42,11 +42,11 @@ function buildHtml(center, zoom, tileType = DEFAULT_PROVIDER) {
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
   html, body, #map { height: 100%; margin: 0; padding: 0; background: #EDE6D8; }
-  .pin { width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  .pin { width: 20px; height: 20px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
          border: 3px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.35); cursor: pointer; }
   .pin span { display: block; transform: rotate(45deg); color: #fff; font: 700 13px/22px sans-serif; text-align: center; }
-  .pin.todo { background: #E07A5F; }
-  .pin.next { background: #C8553D; animation: pulse 1.5s infinite; }
+  .pin.todo { background: #FFE047; }
+  .pin.next { background: #FFE047; animation: pulse 1.5s infinite; }
   .pin.visited { background: #10534a; }
   .pin.search { background: #2196F3; }
   @keyframes pulse {
@@ -97,8 +97,12 @@ function buildHtml(center, zoom, tileType = DEFAULT_PROVIDER) {
   var markersLayer = L.layerGroup().addTo(map);
   var routeLayer = L.layerGroup().addTo(map);
   var hasFitted = false;
+  // NEW: remembers how many points were drawn last time, so the map can
+  // re-fit itself when more places arrive (e.g. all destinations loaded)
+  var lastCount = -1;
 
-  function renderPoints(points, userLoc) {
+  // CHANGED: new third argument showRoute (false = no dashed route line)
+  function renderPoints(points, userLoc, showRoute) {
     markersLayer.clearLayers();
     routeLayer.clearLayers();
     var bounds = [];
@@ -142,7 +146,9 @@ function buildHtml(center, zoom, tileType = DEFAULT_PROVIDER) {
     });
 
     // Draw route path line showing the roads to visit
-    if (routeCoords.length > 1) {
+    // (CHANGED: skipped when showRoute is false, e.g. when ALL places are
+    // shown, because a line across every destination makes no sense)
+    if (showRoute && routeCoords.length > 1) {
       L.polyline(routeCoords, {
         color: '#10534a',
         weight: 4,
@@ -153,10 +159,13 @@ function buildHtml(center, zoom, tileType = DEFAULT_PROVIDER) {
       }).addTo(routeLayer);
     }
 
-    if (!hasFitted && bounds.length > 1) {
+    // CHANGED: fit the view on the first draw AND whenever the number of
+    // points changes (not on every update, so panning is never overridden)
+    if (bounds.length > 1 && (!hasFitted || points.length !== lastCount)) {
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
       hasFitted = true;
     }
+    lastCount = points.length;
   }
 
   var meMarker = null;
@@ -201,6 +210,7 @@ export default function LeafletMap({
   focus,
   searchMarker,
   mapType = "google",
+  showRoute = true, // NEW: false hides the dashed route line
   onPointPress,
   onUserMoved,
   height,
@@ -208,7 +218,15 @@ export default function LeafletMap({
   const webRef = useRef(null);
   const readyRef = useRef(false);
   const latest = useRef({});
-  latest.current = { points, userLocation, followUser, focus, searchMarker, mapType };
+  latest.current = {
+    points,
+    userLocation,
+    followUser,
+    focus,
+    searchMarker,
+    mapType,
+    showRoute,
+  };
 
   const [status, setStatus] = useState("loading");
   const [detail, setDetail] = useState("");
@@ -250,10 +268,14 @@ export default function LeafletMap({
     webRef.current?.injectJavaScript(`if (window.mapReady) { ${code} } true;`);
   }
 
+  // CHANGED: also tells the page whether to draw the route line
   function sendPoints() {
     const pts = latest.current.points || [];
     const loc = latest.current.userLocation || null;
-    run(`renderPoints(${JSON.stringify(pts)}, ${JSON.stringify(loc)});`);
+    const route = latest.current.showRoute !== false;
+    run(
+      `renderPoints(${JSON.stringify(pts)}, ${JSON.stringify(loc)}, ${route});`,
+    );
   }
 
   function sendUser() {
@@ -290,9 +312,10 @@ export default function LeafletMap({
     ? `${searchMarker.lat},${searchMarker.lng}`
     : "none";
 
+  // CHANGED: redraw also when showRoute changes
   useEffect(() => {
     sendPoints();
-  }, [pointsKey, userLocation?.latitude, userLocation?.longitude]);
+  }, [pointsKey, userLocation?.latitude, userLocation?.longitude, showRoute]);
 
   useEffect(() => {
     sendUser();
@@ -360,7 +383,9 @@ export default function LeafletMap({
           {status === "loading" ? (
             <>
               <ActivityIndicator color={colors.teal} />
-              <Text style={styles.overlayText}>Loading Google Map & roads...</Text>
+              <Text style={styles.overlayText}>
+                Loading Google Map & roads...
+              </Text>
             </>
           ) : (
             <>
