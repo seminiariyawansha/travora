@@ -339,7 +339,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: "rgba(0,0,0,0.42)",
   },
-  },
   heroTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
