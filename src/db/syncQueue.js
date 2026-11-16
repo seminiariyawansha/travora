@@ -18,6 +18,18 @@ export async function addPendingSync({
   }
 
   const db = await getDb();
+
+  // Dedup: skip if an unsynced row already exists for this exact unlock
+  const existing = await db.getFirstAsync(
+    `SELECT id FROM pending_sync
+     WHERE userId = ? AND destinationId = ? AND pointId = ? AND actionType = ? AND synced = 0`,
+    [userId, destinationId, pointId, actionType],
+  );
+  if (existing) {
+    console.log(`addPendingSync: duplicate skipped for point ${pointId}`);
+    return;
+  }
+
   await db.runAsync(
     `INSERT INTO pending_sync (userId, destinationId, pointId, actionType, pointsEarned, createdAt, synced)
      VALUES (?, ?, ?, ?, ?, ?, 0)`,

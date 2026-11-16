@@ -78,17 +78,39 @@ export async function downloadDestination(destinationId) {
   }
 
   let savedCount = 0;
-  const skipped = []; // objects { id, reason } of points that could not be saved
+  const skipped = []; // objects { id, reason } — only SQLite-save failures
+  const noContent = []; // point IDs saved with empty content
 
   for (const point of points) {
     try {
-      const content =
+      // Try the content sub-collection first, fall back to inline content map,
+      // then fall back to top-level story/images/video fields
+      let content =
         (await getPointContent(destinationId, point.id)) || point.content;
-      if (!content) {
-        const reason = "no content";
-        skipped.push({ id: point.id, reason });
-        console.log(`Skipped point ${point.id}: ${reason}`);
-        continue;
+
+      // Support alternative top-level shape: story / images / video
+      if (!content && (point.story || point.images || point.video)) {
+        content = {
+          storyText: point.story ?? "",
+          images: point.images ?? [],
+          videoUrl: point.video ?? null,
+        };
+      }
+
+      let storyText = "";
+      let images = [];
+      let videoUrl = null;
+      let hasContent = false;
+
+      if (content) {
+        storyText = content.storyText ?? "";
+        images = Array.isArray(content.images) ? content.images : [];
+        videoUrl = content.videoUrl ?? null;
+        hasContent = true;
+      } else {
+        // No content at all — still save the point so geofence unlock works
+        console.log(`Point ${point.id}: no content — saving with empty fields`);
+        noContent.push(point.id);
       }
 
       const cleanPointId = String(point.id).replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -97,7 +119,6 @@ export async function downloadDestination(destinationId) {
 
       // Download each image safely
       const localImagePaths = [];
-      const images = Array.isArray(content.images) ? content.images : [];
       for (let i = 0; i < images.length; i++) {
         const imageUrl = images[i];
         if (imageUrl && typeof imageUrl === "string" && imageUrl.trim()) {
@@ -118,12 +139,12 @@ export async function downloadDestination(destinationId) {
         }
       }
 
-      // Download the video, if there is one (skip non-direct or youtube URLs cleanly)
+      // Download the video if it is a direct URL (skip YouTube / empty links cleanly)
       let localVideoPath = null;
-      if (isDirectVideoUrl(content.videoUrl)) {
+      if (isDirectVideoUrl(videoUrl)) {
         try {
           localVideoPath = await downloadFile(
-            content.videoUrl,
+            videoUrl,
             `${cleanPointId}_video.mp4`,
           );
         } catch (vidErr) {
@@ -135,7 +156,7 @@ export async function downloadDestination(destinationId) {
         }
       }
 
-      if (hadBadImage || hadBadVideo) {
+      if (hasContent && (hadBadImage || hadBadVideo)) {
         const issues = [];
         if (hadBadImage) issues.push("bad image link");
         if (hadBadVideo) issues.push("bad video link");
@@ -156,14 +177,14 @@ export async function downloadDestination(destinationId) {
           point.radiusMeters != null ? Number(point.radiusMeters) : 0,
           point.indoorFriendly ? 1 : 0,
           point.pointsValue != null ? Number(point.pointsValue) : 0,
-          content.storyText ?? "",
+          storyText,
           JSON.stringify(localImagePaths),
           localVideoPath,
         ],
       );
       savedCount++;
     } catch (error) {
-      console.log("Could not download point", point.id, error);
+      console.log("Could not save point", point.id, error);
       skipped.push({ id: point.id, reason: error?.message || "database error" });
     }
   }
@@ -171,7 +192,8 @@ export async function downloadDestination(destinationId) {
   return {
     destination,
     pointCount: points.length, // points found in Firebase
-    savedCount, // points really saved on the phone
-    skipped, // points that failed or had no content: [{ id, reason }]
+    savedCount, // points saved on the phone (includes no-content ones)
+    skipped, // only SQLite-save failures: [{ id, reason }]
+    noContent, // point IDs saved but with no story/images/video
   };
 }
