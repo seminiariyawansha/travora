@@ -1,291 +1,557 @@
-import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+// src/app/(tabs)/map.js
+import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  LayoutAnimation,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-
 import { SafeAreaView } from "react-native-safe-area-context";
-import MapView, { Marker } from "react-native-maps";
 import GpsSimulator from "../../components/GpsSimulator";
+import LeafletMap from "../../components/LeafletMap";
+import MapSearch from "../../components/MapSearch";
 import Tag from "../../components/Tag";
+import { getCachedPoints } from "../../db/offlineContentService";
+import { getPendingSync } from "../../db/syncQueue";
 import { useLocation } from "../../hooks/useLocation";
 import { auth } from "../../services/firebaseConfig";
+import { getUserProgress } from "../../services/progressService";
 import { unlockNearbyPoints } from "../../services/unlockService";
-import { isWithinRadius } from "../../utils/locationUtils";
 import { colors } from "../../theme/colors";
-import { getCachedPoints } from "../../db/offlineContentService";
+import { useResponsive } from "../../theme/responsive";
 
-export default function MapScreen() {
-const router = useRouter();
-
-const [points, setPoints] = useState([]);
-
-useEffect(() => {
-  async function loadCachedPoints() {
-    try {
-      const cachedPoints = await getCachedPoints("sigiriya");
-
-      setPoints(
-        cachedPoints.map((point) => ({
-          ...point,
-          unlocked: false,
-          latitude:
-            point.latitude === null ? null : Number(point.latitude),
-          longitude:
-            point.longitude === null ? null : Number(point.longitude),
-          radiusMeters:
-            point.radiusMeters === null
-              ? null
-              : Number(point.radiusMeters),
-          pointsValue: Number(point.pointsValue || 0),
-        }))
-      );
-    } catch (error) {
-      console.error("Failed to load cached tourist points:", error);
-    }
-  }
-
-  loadCachedPoints();
-}, []);
-const [simulatedLocation, setSimulatedLocation] = useState(null);
-
-const { location: realLocation, errorMsg: locationError } = useLocation();
-
-const effectiveLocation = simulatedLocation || realLocation;
 const destinationId = "sigiriya";
-const userId = auth?.currentUser?.uid;
+const SIGIRIYA_CENTER = { lat: 7.957, lng: 80.7603 };
+const VISITED_COLOR = "#8FA89F";
+const NEXT_COLOR = "#C8553D";
 
-// Only show points inside their geofence radius.
-const nearbyPoints = useMemo(() => {
-if (!effectiveLocation) return [];
+// Straight-line distance in metres between two coordinates
+function distanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-return points.filter((point) => {
-  if (
-    typeof point.latitude !== "number" ||
-    typeof point.longitude !== "number" ||
-    typeof point.radiusMeters !== "number"
-  ) {
-    return false;
-  }
+function formatDistance(meters) {
+  if (meters == null) return null;
+  return meters >= 1000
+    ? `${(meters / 1000).toFixed(1)} km away`
+    : `${Math.round(meters)} m away`;
+}
 
-  return isWithinRadius(
-    effectiveLocation.latitude,
-    effectiveLocation.longitude,
-    point.latitude,
-    point.longitude,
-    point.radiusMeters
-  );
-});
+// Which point IDs has this tourist already visited? Saved progress from
+// Firestore, plus anything unlocked offline that is still waiting to sync.
+async function loadVisitedIds(userId) {
+  const ids = new Set();
 
-}, [
-points,
-effectiveLocation?.latitude,
-effectiveLocation?.longitude,
-]);
-
-// Check and unlock nearby points whenever location changes.
-useEffect(() => {
-let isMounted = true;
-
-async function handleGeofenceUnlock() {
-  console.log("Geofence function started");
-  console.log("Effective location:", effectiveLocation);
-  console.log("Firebase user ID:", userId);
-  console.log("Loaded points:", points);
-
-  if (!effectiveLocation || !userId) {
-    console.log("Geofence check stopped: location or user ID missing");
-    return;
+  if (userId) {
+    try {
+      const progress = await getUserProgress(userId, destinationId);
+      (progress?.unlockedPoints ?? []).forEach((id) => ids.add(id));
+    } catch (error) {
+      console.log("Map: saved progress unavailable:", error.message);
+    }
   }
 
   try {
-    const newlyUnlocked = await unlockNearbyPoints(
-      effectiveLocation,
-      points,
-      userId,
-      destinationId
-    );
-    console.log("Newly unlocked points:", newlyUnlocked);
-    console.log("Current user ID:", userId);
+    const pending = await getPendingSync();
+    pending
+      .filter(
+        (item) =>
+          item.actionType === "unlock" &&
+          item.destinationId === destinationId &&
+          (!userId || item.userId === userId),
+      )
+      .forEach((item) => ids.add(item.pointId));
+  } catch (error) {
+    console.log("Map: pending unlocks unavailable:", error.message);
+  }
 
-    if (isMounted && newlyUnlocked.length > 0) {
-      // Create new point objects so React refreshes the markers and list.
-      setPoints((currentPoints) =>
-        currentPoints.map((point) => {
-          const wasUnlocked = newlyUnlocked.some(
-            (unlocked) => unlocked.id === point.id
+  return ids;
+}
+
+export default function MapScreen() {
+  const router = useRouter();
+  const { height } = useResponsive();
+  const mapHeight = Math.min(Math.max(height * 0.42, 260), 480);
+
+  const [points, setPoints] = useState([]);
+  const [simulatedLocation, setSimulatedLocation] = useState(null);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [follow, setFollow] = useState(true);
+  const [focus, setFocus] = useState(null);
+  const [searchMarker, setSearchMarker] = useState(null);
+
+  const { location: realLocation, errorMsg: locationError } = useLocation();
+  const effectiveLocation = simulatedLocation || realLocation;
+  const userId = auth?.currentUser?.uid;
+
+  // Load the downloaded (cached) points and which of them are already visited.
+  // Runs every time this tab is opened, so a point unlocked elsewhere updates here.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      async function load() {
+        try {
+          const cachedPoints = await getCachedPoints(destinationId);
+          const visited = await loadVisitedIds(userId);
+          if (!active) return;
+
+          setPoints((previous) =>
+            cachedPoints.map((point) => ({
+              ...point,
+              // visited = saved progress, or already unlocked during this session
+              unlocked:
+                visited.has(point.id) ||
+                previous.find((p) => p.id === point.id)?.unlocked === true,
+              latitude: point.latitude === null ? null : Number(point.latitude),
+              longitude:
+                point.longitude === null ? null : Number(point.longitude),
+              radiusMeters:
+                point.radiusMeters === null ? null : Number(point.radiusMeters),
+              pointsValue: Number(point.pointsValue || 0),
+            })),
+          );
+        } catch (error) {
+          console.error("Failed to load cached tourist points:", error);
+        }
+      }
+
+      load();
+      return () => {
+        active = false;
+      };
+    }, [userId]),
+  );
+
+  // Add distance and a status to every point:
+  // visited, next (nearest one still to visit) or todo
+  const { allPoints, toVisit, visited } = useMemo(() => {
+    const withDistance = points.map((point) => ({
+      ...point,
+      distance:
+        effectiveLocation &&
+        Number.isFinite(point.latitude) &&
+        Number.isFinite(point.longitude)
+          ? distanceMeters(
+              effectiveLocation.latitude,
+              effectiveLocation.longitude,
+              point.latitude,
+              point.longitude,
+            )
+          : null,
+    }));
+
+    const notVisited = withDistance
+      .filter((p) => !p.unlocked)
+      .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+
+    // Only call something "next" when we know where the user is
+    const nextId = effectiveLocation ? notVisited[0]?.id : null;
+
+    const withStatus = withDistance.map((p) => ({
+      ...p,
+      status: p.unlocked ? "visited" : p.id === nextId ? "next" : "todo",
+    }));
+
+    return {
+      allPoints: withStatus,
+      toVisit: withStatus
+        .filter((p) => !p.unlocked)
+        .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity)),
+      visited: withStatus.filter((p) => p.unlocked),
+    };
+  }, [points, effectiveLocation?.latitude, effectiveLocation?.longitude]);
+
+  // Check and unlock nearby points whenever location changes.
+  // Only points not visited yet are checked, so a visited point never
+  // triggers the unlock screen a second time.
+  useEffect(() => {
+    let isMounted = true;
+
+    async function handleGeofenceUnlock() {
+      if (!effectiveLocation || !userId) return;
+
+      const candidates = points.filter((p) => !p.unlocked);
+      if (candidates.length === 0) return;
+
+      try {
+        const newlyUnlocked = await unlockNearbyPoints(
+          effectiveLocation,
+          candidates,
+          userId,
+          destinationId,
+        );
+
+        if (isMounted && newlyUnlocked.length > 0) {
+          console.log("Newly unlocked points:", newlyUnlocked);
+
+          // Create new point objects so React refreshes the markers and list.
+          setPoints((currentPoints) =>
+            currentPoints.map((point) =>
+              newlyUnlocked.some((unlocked) => unlocked.id === point.id)
+                ? { ...point, unlocked: true }
+                : point,
+            ),
           );
 
-          return wasUnlocked
-            ? { ...point, unlocked: true }
-            : point;
-        })
-      );
+          const unlockedPoint = newlyUnlocked[0];
 
-      const unlockedPoint = newlyUnlocked[0];
+          router.push({
+            pathname: "/unlock",
+            params: {
+              pointId: unlockedPoint.id,
+              pointsEarned: unlockedPoint.pointsValue ?? 10,
+            },
+          });
+        }
+      } catch (error) {
+        console.error("Geofence check error on map screen:", error);
+      }
+    }
 
-      router.push({
-        pathname: "/unlock",
-        params: {
-          pointId: unlockedPoint.id,
-          pointsEarned: unlockedPoint.pointsValue ?? 10,
-        },
+    handleGeofenceUnlock();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    effectiveLocation?.latitude,
+    effectiveLocation?.longitude,
+    userId,
+    points,
+  ]);
+
+  // The simple shape the map needs for each pin
+  const mapPoints = useMemo(
+    () =>
+      allPoints
+        .filter(
+          (p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude),
+        )
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          lat: p.latitude,
+          lng: p.longitude,
+          status: p.status,
+        })),
+    [allPoints],
+  );
+
+  function openStory(pointId) {
+    router.push({ pathname: "/story", params: { pointId, destinationId } });
+  }
+
+  // Tapping a pin: visited points open their story, others just show their name
+  function handlePinPress(pointId) {
+    const point = allPoints.find((p) => p.id === pointId);
+    if (point?.unlocked) openStory(pointId);
+  }
+
+  function flyToPoint(point) {
+    setFollow(false);
+    setSearchMarker(null);
+    setFocus({
+      lat: point.latitude,
+      lng: point.longitude,
+      zoom: 18,
+      key: Date.now(),
+    });
+  }
+
+  function flyToPlace(place) {
+    setFollow(false);
+    setSearchMarker({ lat: place.lat, lng: place.lng, label: place.name });
+    setFocus({ lat: place.lat, lng: place.lng, zoom: 16, key: Date.now() });
+  }
+
+  function locateMe() {
+    setFollow(true);
+    if (effectiveLocation) {
+      setFocus({
+        lat: effectiveLocation.latitude,
+        lng: effectiveLocation.longitude,
+        zoom: 17,
+        key: Date.now(),
       });
     }
-  } catch (error) {
-    console.error("Geofence check error on map screen:", error);
   }
-}
 
-handleGeofenceUnlock();
+  function togglePanel() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setPanelOpen((open) => !open);
+  }
 
-return () => {
-  isMounted = false;
-};
+  function renderRow(point, onPress) {
+    const isVisited = point.status === "visited";
+    const isNext = point.status === "next";
+    const dot = isVisited
+      ? VISITED_COLOR
+      : isNext
+        ? NEXT_COLOR
+        : colors.terracotta;
 
-}, [
-  effectiveLocation?.latitude,
-  effectiveLocation?.longitude,
-  userId,
-  points,
-]);
+    return (
+      <Pressable
+        key={point.id}
+        onPress={onPress}
+        style={[styles.pointRow, isVisited && styles.pointRowVisited]}
+      >
+        <View style={[styles.rowDot, { backgroundColor: dot }]}>
+          {isVisited && (
+            <Ionicons name="checkmark" size={12} color={colors.white} />
+          )}
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={[styles.pointName, isVisited && { color: colors.gray }]}>
+            {point.name}
+          </Text>
+          {formatDistance(point.distance) && (
+            <Text style={styles.distance}>
+              {formatDistance(point.distance)}
+            </Text>
+          )}
+        </View>
+        <Tag
+          label={isVisited ? "Visited" : isNext ? "Next stop" : "To visit"}
+          variant={isVisited ? "unlocked" : "suggested"}
+        />
+      </Pressable>
+    );
+  }
 
-return (
-<SafeAreaView style={styles.container}>
-<MapView
-style={{ height: 320 }}
-initialRegion={{
-latitude: 7.957,
-longitude: 80.7603,
-latitudeDelta: 0.01,
-longitudeDelta: 0.01,
-}}
-region={
-effectiveLocation
-? {
-latitude: effectiveLocation.latitude,
-longitude: effectiveLocation.longitude,
-latitudeDelta: 0.01,
-longitudeDelta: 0.01,
-}
-: undefined
-}
->
-{points
-  .filter(
-    (point) =>
-      Number.isFinite(point.latitude) &&
-      Number.isFinite(point.longitude)
-  )
-  .map((point) => (
-    <Marker
-      key={point.id}
-      coordinate={{
-        latitude: point.latitude,
-        longitude: point.longitude,
-      }}
-      title={point.name}
-      pinColor={point.unlocked ? colors.teal : colors.terracotta}
-    />
-  ))}
-    {effectiveLocation && (
-      <Marker
-        coordinate={{
-          latitude: effectiveLocation.latitude,
-          longitude: effectiveLocation.longitude,
-        }}
-        title={simulatedLocation ? "Simulated Location" : "Your Location"}
-        pinColor="#2196F3"
-      />
-    )}
-  </MapView>
+  const progressPercent = allPoints.length
+    ? (visited.length / allPoints.length) * 100
+    : 0;
 
-  <ScrollView contentContainerStyle={{ padding: 20, gap: 10 }}>
-    <GpsSimulator
-      points={points}
-      onLocationChange={setSimulatedLocation}
-    />
+  return (
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      {/* Map area: fixed height with the panel open, fills the screen when it's hidden */}
+      <View
+        style={[
+          styles.mapWrap,
+          panelOpen ? { height: mapHeight } : { flex: 1 },
+        ]}
+      >
+        <LeafletMap
+          center={SIGIRIYA_CENTER}
+          zoom={16}
+          points={mapPoints}
+          userLocation={effectiveLocation}
+          followUser={follow}
+          focus={focus}
+          searchMarker={searchMarker}
+          onPointPress={handlePinPress}
+          onUserMoved={() => setFollow(false)}
+        />
 
-    {locationError && (
-      <Text style={styles.errorText}>GPS Notice: {locationError}</Text>
-    )}
+        <MapSearch
+          points={allPoints}
+          onSelectPoint={flyToPoint}
+          onSelectPlace={flyToPlace}
+          onClear={() => setSearchMarker(null)}
+        />
 
-    <Text style={styles.sectionTitle}>
-      Points near you ({nearbyPoints.length})
-    </Text>
-
-    {nearbyPoints.length === 0 ? (
-      <Text style={styles.emptyText}>
-        No points nearby. Select another simulated location.
-      </Text>
-    ) : (
-      nearbyPoints.map((point) => (
-        <Pressable
-          key={point.id}
-          onPress={() =>
-            router.push({
-              pathname: "/story",
-              params: { pointId: point.id },
-            })
-          }
-          style={styles.pointRow}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.pointName}>{point.name}</Text>
-
-            <Tag
-              label={point.unlocked ? "Unlocked" : point.indoorFriendly ? "Indoor" : "Outdoor"}
-              variant={point.unlocked ? "suggested" : "neutral"}
+        {/* Legend */}
+        <View style={styles.legend}>
+          <View style={styles.legendItem}>
+            <View
+              style={[styles.legendDot, { backgroundColor: VISITED_COLOR }]}
             />
+            <Text style={styles.legendText}>Visited</Text>
           </View>
-        </Pressable>
-      ))
-    )}
-  </ScrollView>
-</SafeAreaView>
+          <View style={styles.legendItem}>
+            <View
+              style={[styles.legendDot, { backgroundColor: colors.terracotta }]}
+            />
+            <Text style={styles.legendText}>To visit</Text>
+          </View>
+        </View>
 
-);
+        {/* Locate me */}
+        <Pressable style={styles.locateButton} onPress={locateMe} hitSlop={6}>
+          <Ionicons
+            name={follow ? "navigate" : "navigate-outline"}
+            size={20}
+            color={colors.teal}
+          />
+        </Pressable>
+
+        {/* Hide / show the panel */}
+        <Pressable style={styles.toggleButton} onPress={togglePanel}>
+          <Ionicons
+            name={panelOpen ? "chevron-down" : "chevron-up"}
+            size={16}
+            color={colors.white}
+          />
+          <Text style={styles.toggleText}>
+            {panelOpen ? "Hide panel" : "Show panel"}
+          </Text>
+        </Pressable>
+      </View>
+
+      {panelOpen && (
+        <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
+          <GpsSimulator
+            points={points}
+            onLocationChange={setSimulatedLocation}
+          />
+
+          {locationError && (
+            <Text style={styles.errorText}>GPS Notice: {locationError}</Text>
+          )}
+
+          <View style={styles.progressCard}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.sectionTitle}>Your progress</Text>
+              <Text style={styles.progressCount}>
+                {visited.length} of {allPoints.length} visited
+              </Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View
+                style={[styles.progressFill, { width: `${progressPercent}%` }]}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.sectionTitle}>To visit ({toVisit.length})</Text>
+          {toVisit.length === 0 ? (
+            <Text style={styles.emptyText}>
+              {allPoints.length === 0
+                ? "No points yet. Download the destination first."
+                : "You've visited every point here. Well done!"}
+            </Text>
+          ) : (
+            toVisit.map((point) => renderRow(point, () => flyToPoint(point)))
+          )}
+
+          {visited.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { marginTop: 6 }]}>
+                Visited ({visited.length})
+              </Text>
+              {visited.map((point) =>
+                renderRow(point, () => openStory(point.id)),
+              )}
+            </>
+          )}
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-container: {
-flex: 1,
-backgroundColor: colors.sand,
-},
-sectionTitle: {
-fontSize: 15,
-fontWeight: "700",
-color: colors.ink,
-marginBottom: 4,
-},
-pointRow: {
-flexDirection: "row",
-backgroundColor: colors.white,
-borderRadius: 14,
-borderWidth: 1,
-borderColor: colors.cardBorder,
-padding: 12,
-gap: 6,
-},
-pointName: {
-fontSize: 13.5,
-fontWeight: "600",
-color: colors.ink,
-marginBottom: 4,
-},
-errorText: {
-color: "#C0392B",
-fontSize: 12,
-fontWeight: "600",
-marginBottom: 4,
-},
-emptyText: {
-color: colors.ink,
-fontSize: 13,
-paddingVertical: 10,
-},
+  container: { flex: 1, backgroundColor: colors.sand },
+  mapWrap: { width: "100%", position: "relative", backgroundColor: "#EDE6D8" },
+
+  legend: {
+    position: "absolute",
+    top: 68,
+    left: 12,
+    flexDirection: "row",
+    gap: 12,
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    zIndex: 5,
+  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { fontSize: 11, fontWeight: "600", color: colors.ink },
+
+  locateButton: {
+    position: "absolute",
+    right: 12,
+    bottom: 40,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+    zIndex: 5,
+  },
+  toggleButton: {
+    position: "absolute",
+    bottom: 12,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.teal,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+    zIndex: 5,
+  },
+  toggleText: { color: colors.white, fontSize: 12.5, fontWeight: "600" },
+
+  progressCard: {
+    backgroundColor: colors.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: 14,
+    gap: 10,
+  },
+  progressHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  progressCount: { fontSize: 12, fontWeight: "600", color: colors.gray },
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.divider,
+  },
+  progressFill: { height: 8, borderRadius: 4, backgroundColor: VISITED_COLOR },
+
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: colors.ink },
+  pointRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: 12,
+  },
+  pointRowVisited: { backgroundColor: "#F4F6F4" },
+  rowDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pointName: { fontSize: 13.5, fontWeight: "600", color: colors.ink },
+  distance: { fontSize: 11.5, color: colors.gray },
+  errorText: { color: "#C0392B", fontSize: 12, fontWeight: "600" },
+  emptyText: { color: colors.ink, fontSize: 13, paddingVertical: 6 },
 });
