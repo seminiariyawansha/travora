@@ -1,6 +1,6 @@
 // src/app/admin/points.js
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +21,7 @@ export default function AdminPoints() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState({}); // { [destinationId]: true }
 
   // Reload every time this screen comes back into view (e.g. after saving).
   useFocusEffect(
@@ -43,6 +44,26 @@ export default function AdminPoints() {
       };
     }, [])
   );
+
+  // Group the points by destination, keeping the original order.
+  const groups = useMemo(() => {
+    const map = new Map();
+    items.forEach((p) => {
+      if (!map.has(p.destinationId)) {
+        map.set(p.destinationId, {
+          destinationId: p.destinationId,
+          destinationName: p.destinationName,
+          points: [],
+        });
+      }
+      map.get(p.destinationId).points.push(p);
+    });
+    return Array.from(map.values());
+  }, [items]);
+
+  function toggle(destinationId) {
+    setExpanded((prev) => ({ ...prev, [destinationId]: !prev[destinationId] }));
+  }
 
   function handleDelete(item) {
     Alert.alert(
@@ -70,13 +91,13 @@ export default function AdminPoints() {
     );
   }
 
-  function renderItem({ item }) {
+  function renderPoint(item) {
     return (
-      <View style={styles.card}>
+      <View key={item.id} style={styles.card}>
         <View style={{ flex: 1 }}>
           <Text style={styles.name}>{item.name}</Text>
           <Text style={styles.meta}>
-            {item.destinationName} · {item.radiusMeters}m · {item.pointsValue} pts
+            {item.radiusMeters}m · {item.pointsValue} pts
           </Text>
         </View>
         <Pressable
@@ -100,6 +121,30 @@ export default function AdminPoints() {
     );
   }
 
+  function renderGroup({ item: group }) {
+    const isOpen = !!expanded[group.destinationId];
+    return (
+      <View style={styles.group}>
+        <Pressable
+          style={styles.groupHeader}
+          onPress={() => toggle(group.destinationId)}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.groupName}>{group.destinationName}</Text>
+            <Text style={styles.groupCount}>
+              {group.points.length} {group.points.length === 1 ? "point" : "points"}
+            </Text>
+          </View>
+          <Text style={styles.arrow}>{isOpen ? "▴" : "▾"}</Text>
+        </Pressable>
+
+        {isOpen ? (
+          <View style={styles.groupBody}>{group.points.map(renderPoint)}</View>
+        ) : null}
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.header}>
@@ -113,9 +158,9 @@ export default function AdminPoints() {
         <ActivityIndicator color={colors.teal} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={items}
-          keyExtractor={(item) => `${item.destinationId}/${item.id}`}
-          renderItem={renderItem}
+          data={groups}
+          keyExtractor={(group) => String(group.destinationId)}
+          renderItem={renderGroup}
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
           ListHeaderComponent={error ? <Text style={styles.error}>{error}</Text> : null}
           ListEmptyComponent={
@@ -137,6 +182,30 @@ const styles = StyleSheet.create({
   back: { color: colors.teal, fontWeight: "600", fontSize: 14 },
   title: { fontSize: 22, fontWeight: "700", color: colors.ink, marginTop: 8 },
   list: { padding: 24 },
+
+  group: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 12,
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  groupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+  },
+  groupName: { fontSize: 15, fontWeight: "700", color: colors.ink },
+  groupCount: { fontSize: 12, color: colors.gray, marginTop: 2 },
+  arrow: { fontSize: 16, color: colors.teal, marginLeft: 8 },
+  groupBody: {
+    borderTopWidth: 1,
+    borderTopColor: colors.cardBorder,
+    padding: 10,
+    backgroundColor: colors.sand,
+  },
+
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -144,8 +213,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
+    padding: 12,
+    marginBottom: 8,
     gap: 8,
   },
   name: { fontSize: 15, fontWeight: "600", color: colors.ink },
