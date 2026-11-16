@@ -6,12 +6,22 @@ const DESTINATION_PHOTOS = {
     "https://images.unsplash.com/photo-1588598198321-9735fd52455b?q=80&w=1000&auto=format&fit=crop",
   "galle-fort":
     "https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?q=80&w=1000&auto=format&fit=crop",
+  "nine_arch_bridge":
+    "https://images.unsplash.com/photo-1586861635167-e5223aadc9fe?q=80&w=1000&auto=format&fit=crop",
   ella:
     "https://images.unsplash.com/photo-1586861635167-e5223aadc9fe?q=80&w=1000&auto=format&fit=crop",
+  "kandy_temple":
+    "https://images.unsplash.com/photo-1546708973-b339540b5162?q=80&w=1000&auto=format&fit=crop",
   kandy:
     "https://images.unsplash.com/photo-1546708973-b339540b5162?q=80&w=1000&auto=format&fit=crop",
+  "mirissa_beach":
+    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1000&auto=format&fit=crop",
   mirissa:
-    "https://images.unsplash.com/photo-1544735716-392fe2489ffa?q=80&w=1000&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1000&auto=format&fit=crop",
+  anuradhapura:
+    "https://images.unsplash.com/photo-1620619767323-b95a89183081?q=80&w=1000&auto=format&fit=crop",
+  "dambulla_cave":
+    "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?q=80&w=1000&auto=format&fit=crop",
   default:
     "https://images.unsplash.com/photo-1588598198321-9735fd52455b?q=80&w=1000&auto=format&fit=crop",
 };
@@ -36,9 +46,12 @@ export function getDestinationPhoto(destinationId, destName) {
   const key = (destinationId || destName || "").toLowerCase().trim();
   if (key.includes("galle")) return DESTINATION_PHOTOS["galle-fort"];
   if (key.includes("sigiriya")) return DESTINATION_PHOTOS.sigiriya;
-  if (key.includes("ella")) return DESTINATION_PHOTOS.ella;
-  if (key.includes("kandy")) return DESTINATION_PHOTOS.kandy;
-  if (key.includes("mirissa")) return DESTINATION_PHOTOS.mirissa;
+  if (key.includes("nine_arch") || key.includes("nine arch") || key.includes("ella"))
+    return DESTINATION_PHOTOS["nine_arch_bridge"];
+  if (key.includes("kandy")) return DESTINATION_PHOTOS["kandy_temple"];
+  if (key.includes("mirissa")) return DESTINATION_PHOTOS["mirissa_beach"];
+  if (key.includes("anuradhapura")) return DESTINATION_PHOTOS.anuradhapura;
+  if (key.includes("dambulla")) return DESTINATION_PHOTOS["dambulla_cave"];
   return DESTINATION_PHOTOS[key] || DESTINATION_PHOTOS.default;
 }
 
