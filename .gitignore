@@ -41,3 +41,8 @@ Thumbs.db
 # Editor folders (.vscode is deliberately NOT ignored so the team shares settings)
 .idea/
 
+
+# Firebase service account keys
+scripts/serviceAccountKey.json
+scripts/*adminsdk*.json
+scripts/*firebase*.json
