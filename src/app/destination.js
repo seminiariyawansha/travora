@@ -4,6 +4,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  ImageBackground,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,11 +17,14 @@ import ScreenContainer from "../components/ScreenContainer";
 import Tag from "../components/Tag";
 import WeatherBanner from "../components/WeatherBanner";
 import { downloadDestination } from "../db/downloadService";
+import { getCachedPoints } from "../db/offlineContentService";
 import { getDestination, getPoints } from "../services/destinationService";
 import { auth } from "../services/firebaseConfig";
 import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
 import { useResponsive } from "../theme/responsive";
+import { getDestinationPhoto } from "../utils/destinationImages";
 import { getWeatherForDestination } from "../weather/weatherFetchService";
 import {
   getBannerWeatherReason,
@@ -33,6 +37,7 @@ export default function Destination() {
   const insets = useSafeAreaInsets();
   const { moderateScale, height } = useResponsive();
   const { destinationId } = useLocalSearchParams();
+  const { colors: themeColors, isDark } = useTheme();
 
   const [destination, setDestination] = useState(null);
   const [points, setPoints] = useState([]);
@@ -45,92 +50,127 @@ export default function Destination() {
   // Hero height scales with the screen, but stays within a sensible range
   const heroHeight = Math.min(Math.max(height * 0.2, 150), 230);
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
+  const loadScreen = useCallback(
+    async (isActive) => {
+      setLoading(true);
+      setLoadError("");
+      setWeatherInfo(null);
 
-      async function load() {
-        setLoading(true);
-        setLoadError("");
-        setWeatherInfo(null);
+      // 1. Try Firebase first (works when online)
+      let dest = null;
+      let rawPoints = [];
+      let onlineFailed = false;
 
+      try {
+        dest = await getDestination(destinationId);
+        rawPoints = await getPoints(destinationId);
+      } catch (error) {
+        onlineFailed = true;
+        console.log("Online load failed, trying offline data:", error.message);
+      }
+
+      // 2. If Firebase gave no points, fall back to the downloaded (offline) points
+      if (rawPoints.length === 0) {
         try {
-          // 1. Fetch destination details and points
-          const dest = await getDestination(destinationId);
-          const rawPoints = await getPoints(destinationId);
-
-          // 2. Fetch user progress (optional)
-          let unlockedIds = [];
-          try {
-            const userId = auth.currentUser?.uid ?? "guest";
-            const progress = await getUserProgress(userId, destinationId);
-            unlockedIds = progress?.unlockedPoints ?? [];
-          } catch (progressError) {
-            console.log("Progress load failed:", progressError.message);
-          }
-
-          if (!active) return;
-
-          // 3. Merge unlocked status into points
-          const mergedPoints = rawPoints.map((p) => ({
-            ...p,
-            unlocked: unlockedIds.includes(p.id),
-          }));
-
-          // 4. Display destination and points immediately (unblock UI)
-          setDestination(dest);
-          setPoints(mergedPoints);
-          setLoading(false);
-
-          // 5. Fetch weather asynchronously in the background
-          const lat = dest?.latitude != null ? Number(dest.latitude) : null;
-          const lng = dest?.longitude != null ? Number(dest.longitude) : null;
-
-          if (
-            lat !== null &&
-            lng !== null &&
-            !isNaN(lat) &&
-            !isNaN(lng) &&
-            Number.isFinite(lat) &&
-            Number.isFinite(lng)
-          ) {
-            try {
-              const weather = await getWeatherForDestination(destinationId, lat, lng);
-              if (!active) return;
-
-              if (weather) {
-                setWeatherInfo(weather);
-                // 6. Reorder points when weather arrives, preserving unlocked status
-                setPoints((currentPoints) => sortPointsByWeather(currentPoints, weather));
-              }
-            } catch (weatherErr) {
-              console.log("Weather fetch error on destination screen:", weatherErr?.message);
-            }
-          }
-        } catch (error) {
-          console.log("Destination load failed:", error.message);
-          if (active)
-            setLoadError(
-              "Couldn't load this destination. Check your connection.",
-            );
-        } finally {
-          if (active) setLoading(false);
+          const cached = await getCachedPoints(destinationId);
+          if (cached.length > 0) rawPoints = cached;
+        } catch (cacheError) {
+          console.log("Offline points load failed:", cacheError.message);
         }
       }
 
-      load();
+      // 3. Fetch user progress (optional)
+      let unlockedIds = [];
+      try {
+        const userId = auth.currentUser?.uid ?? "guest";
+        const progress = await getUserProgress(userId, destinationId);
+        unlockedIds = progress?.unlockedPoints ?? [];
+      } catch (progressError) {
+        console.log("Progress load failed:", progressError.message);
+      }
+
+      if (!isActive()) return;
+
+      // 4. Merge unlocked status into points
+      const mergedPoints = rawPoints.map((p) => ({
+        ...p,
+        unlocked: unlockedIds.includes(p.id),
+      }));
+
+      setDestination(dest);
+      setPoints(mergedPoints);
+
+      // Only show an error if we had no data at all
+      if (onlineFailed && mergedPoints.length === 0) {
+        setLoadError("Couldn't load this destination. Check your connection.");
+      }
+      setLoading(false);
+
+      // 5. Fetch weather in the background (live if online, cached if not)
+      const lat = dest?.latitude != null ? Number(dest.latitude) : null;
+      const lng = dest?.longitude != null ? Number(dest.longitude) : null;
+      const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+
+      try {
+        // Offline, coordinates aren't needed: the cached weather is used
+        const weather = await getWeatherForDestination(
+          destinationId,
+          hasCoords ? lat : null,
+          hasCoords ? lng : null,
+        );
+        if (!isActive()) return;
+
+        if (weather) {
+          setWeatherInfo(weather);
+          // 6. Reorder points when weather arrives, preserving unlocked status
+          setPoints((currentPoints) =>
+            sortPointsByWeather(currentPoints, weather),
+          );
+        }
+      } catch (weatherErr) {
+        console.log(
+          "Weather fetch error on destination screen:",
+          weatherErr?.message,
+        );
+      }
+    },
+    [destinationId],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      loadScreen(() => active);
       return () => {
         active = false;
       };
-    }, [destinationId]),
+    }, [loadScreen]),
   );
 
   async function handleDownload() {
     setDownloading(true);
     setDownloadMessage("");
     try {
-      await downloadDestination(destinationId);
-      setDownloadMessage("Downloaded. This destination now works offline.");
+      const result = await downloadDestination(destinationId);
+      console.log("Download result:", result);
+
+      const saved = result?.savedCount ?? result?.pointCount ?? 0;
+
+      if (saved > 0) {
+        setDownloadMessage(
+          `Downloaded ${saved} point(s). This destination now works offline.`,
+        );
+        // Refresh the list so downloaded points show up right away
+        loadScreen(() => true);
+      } else if (result?.pointCount === 0) {
+        setDownloadMessage(
+          "Nothing to download yet. An admin needs to add points first.",
+        );
+      } else {
+        setDownloadMessage(
+          "Points were found but could not be saved. Check that each point has content.",
+        );
+      }
     } catch (error) {
       console.log("Download failed:", error.message);
       setDownloadMessage("Download failed. Please try again.");
@@ -144,27 +184,54 @@ export default function Destination() {
   };
 
   const bannerReason = getBannerWeatherReason(weatherInfo);
+  const isValidPhoto = (url) =>
+    typeof url === "string" &&
+    (url.startsWith("http://") || url.startsWith("https://")) &&
+    !url.includes("wikimedia.org") &&
+    !url.includes("wikipedia.org") &&
+    !url.includes("placeholder");
+
+  const heroPhotoUri =
+    (isValidPhoto(destination?.imageUrl) && destination.imageUrl) ||
+    (isValidPhoto(destination?.photoUrl) && destination.photoUrl) ||
+    getDestinationPhoto(destinationId, destination?.name);
 
   return (
-    <View style={styles.container}>
-      {/* Hero spans the full width, even on tablets */}
-      <View
+    <View style={[styles.container, { backgroundColor: themeColors.bg }]}>
+      {/* Hero spans the full width, with real destination photography */}
+      <ImageBackground
+        source={{ uri: heroPhotoUri }}
         style={[
           styles.hero,
           { height: heroHeight + insets.top, paddingTop: insets.top + 12 },
         ]}
       >
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={20} color={colors.white} />
-        </Pressable>
+        <View style={styles.heroDim} />
+        <View style={styles.heroTopRow}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.backButton}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={20} color={colors.white} />
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/progress",
+                params: { destinationId: destinationId ?? "sigiriya" },
+              })
+            }
+            style={styles.progressBtn}
+          >
+            <Ionicons name="ribbon-outline" size={15} color={colors.white} />
+            <Text style={styles.progressBtnText}>Progress</Text>
+          </Pressable>
+        </View>
         <Text style={[styles.heroTitle, { fontSize: moderateScale(26) }]}>
           {destination?.name || "Destination"}
         </Text>
-      </View>
+      </ImageBackground>
 
       <ScreenContainer>
         <ScrollView
@@ -204,12 +271,21 @@ export default function Destination() {
                   params: { pointId: point.id, destinationId },
                 })
               }
-              style={styles.pointCard}
+              style={[
+                styles.pointCard,
+                {
+                  backgroundColor: themeColors.surface,
+                  borderColor: themeColors.cardBorder,
+                },
+              ]}
             >
               <View style={{ flex: 1, gap: 4 }}>
                 <View style={styles.pointTitleRow}>
                   <Text
-                    style={[styles.pointName, { fontSize: moderateScale(14) }]}
+                    style={[
+                      styles.pointName,
+                      { fontSize: moderateScale(14), color: themeColors.textPrimary },
+                    ]}
                   >
                     {point.name}
                   </Text>
@@ -218,7 +294,10 @@ export default function Destination() {
                   )}
                 </View>
                 <Text
-                  style={[styles.pointMeta, { fontSize: moderateScale(11.5) }]}
+                  style={[
+                    styles.pointMeta,
+                    { fontSize: moderateScale(11.5), color: themeColors.textSecondary },
+                  ]}
                 >
                   {point.indoorFriendly ? "Indoor" : "Outdoor"} ·{" "}
                   {point.pointsValue ?? 0} pts
@@ -227,14 +306,14 @@ export default function Destination() {
               <Ionicons
                 name={point.unlocked ? "checkmark-circle" : "lock-closed"}
                 size={moderateScale(20)}
-                color={point.unlocked ? colors.teal : colors.gray}
+                color={point.unlocked ? themeColors.teal : themeColors.gray}
               />
             </Pressable>
           ))}
         </ScrollView>
 
         {/* Pinned bottom action, clear of the system navigation bar */}
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16, backgroundColor: themeColors.bg }]}>
           {downloadMessage ? (
             <Text style={styles.downloadMessage}>{downloadMessage}</Text>
           ) : null}
@@ -252,10 +331,39 @@ export default function Destination() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.sand },
   hero: {
-    backgroundColor: colors.teal,
+    backgroundColor: colors.tealDark,
     paddingHorizontal: 20,
     justifyContent: "space-between",
     paddingBottom: 18,
+    position: "relative",
+    overflow: "hidden",
+  },
+  heroDim: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.42)",
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  progressBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+  },
+  progressBtnText: {
+    color: colors.white,
+    fontWeight: "600",
+    fontSize: 12,
   },
   backButton: {
     width: 36,

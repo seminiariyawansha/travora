@@ -7,7 +7,7 @@ import { colors } from "../theme/colors";
 
 export default function Unlock() {
   const router = useRouter();
-  const { pointId, pointsEarned } = useLocalSearchParams();
+  const { pointId, pointsEarned, destinationId } = useLocalSearchParams();
 
   // Safely parse pointsEarned, falling back to 10 if missing or invalid
   const parsedPoints = Number(pointsEarned);
@@ -16,7 +16,10 @@ export default function Unlock() {
 
   const handleViewStory = () => {
     if (pointId) {
-      router.push({ pathname: "/story", params: { pointId } });
+      router.push({
+        pathname: "/story",
+        params: { pointId, destinationId: destinationId ?? "sigiriya" },
+      });
     } else {
       router.back();
     }

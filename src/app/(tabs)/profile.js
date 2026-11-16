@@ -1,10 +1,12 @@
 // src/app/(tabs)/profile.js
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   Image,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   View,
@@ -15,14 +17,17 @@ import {
 } from "react-native-safe-area-context";
 import ScreenContainer from "../../components/ScreenContainer";
 import { useAuth } from "../../context/AuthContext";
+import { useTheme } from "../../context/ThemeContext";
 import { logoutUser } from "../../services/authService";
+import { getUserOverallStats } from "../../services/progressService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
 
 const MENU_ITEMS = [
-  { icon: "navigate-outline", label: "Location permissions" },
-  { icon: "cloud-download-outline", label: "Downloaded destinations" },
-  { icon: "notifications-outline", label: "Notifications" },
+  { icon: "color-palette-outline",  label: "Appearance",              route: "/appearance" },
+  { icon: "navigate-outline",       label: "Location permissions",    route: "/location-permissions" },
+  { icon: "cloud-download-outline", label: "Downloaded destinations", route: "/downloaded-destinations" },
+  { icon: "notifications-outline",  label: "Notifications",           route: null },
 ];
 
 export default function Profile() {
@@ -30,15 +35,32 @@ export default function Profile() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, profile } = useAuth();
+  const { colors, isDark } = useTheme();
+
+  const [liveStats, setLiveStats] = useState({
+    totalPoints: 0,
+    destinationsVisited: 0,
+    pointsUnlocked: 0,
+  });
+
+  // Reload stats every time the Profile tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (!user?.uid) return;
+      getUserOverallStats(user.uid)
+        .then((s) => setLiveStats(s))
+        .catch(() => {});
+    }, [user?.uid])
+  );
 
   const displayName = profile?.name || user?.displayName || "Explorer";
   const avatarUrl = profile?.photoURL || user?.photoURL || null;
   const avatarSize = moderateScale(78);
 
   const stats = {
-    totalPoints: profile?.totalPoints ?? 0,
-    destinationsVisited: profile?.destinationsVisited ?? 0,
-    pointsUnlocked: profile?.pointsUnlocked ?? 0,
+    totalPoints: liveStats.totalPoints,
+    destinationsVisited: liveStats.destinationsVisited,
+    pointsUnlocked: liveStats.pointsUnlocked,
   };
 
   async function handleLogout() {
@@ -47,7 +69,8 @@ export default function Profile() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bgSecondary }]} edges={["top", "left", "right"]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.headerBg} />
       <ScreenContainer>
         <View style={[styles.hero, { paddingTop: moderateScale(36) }]}>
           {avatarUrl ? (
@@ -87,30 +110,39 @@ export default function Profile() {
           </Text>
 
           <View style={styles.statsRow}>
-            <View style={styles.statBox}>
+            <Pressable
+              style={({ pressed }) => [styles.statBox, pressed && { opacity: 0.8 }]}
+              onPress={() => router.push("/badge")}
+            >
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
                 {stats.totalPoints}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Total Points
               </Text>
-            </View>
-            <View style={styles.statBox}>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.statBox, pressed && { opacity: 0.8 }]}
+              onPress={() => router.push("/progress")}
+            >
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
                 {stats.destinationsVisited}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Destinations
               </Text>
-            </View>
-            <View style={styles.statBox}>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.statBox, pressed && { opacity: 0.8 }]}
+              onPress={() => router.push("/progress")}
+            >
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
                 {stats.pointsUnlocked}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Points Unlocked
               </Text>
-            </View>
+            </Pressable>
           </View>
         </View>
 
@@ -122,7 +154,57 @@ export default function Profile() {
           }}
         >
           <View>
-            <View style={styles.menuCard}>
+            <Text
+              style={[styles.sectionTitle, { fontSize: moderateScale(15), color: colors.textSecondary }]}
+            >
+              My Activity
+            </Text>
+            <View style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+              <Pressable
+                style={[styles.menuRow, styles.menuDivider, { borderBottomColor: colors.divider }]}
+                onPress={() => router.push("/progress")}
+              >
+                <Ionicons
+                  name="stats-chart-outline"
+                  size={moderateScale(18)}
+                  color={colors.teal}
+                />
+                <Text
+                  style={[styles.menuLabel, { fontSize: moderateScale(13.5), color: colors.textPrimary }]}
+                >
+                  Destination Progress
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={moderateScale(15)}
+                  color={colors.gray}
+                />
+              </Pressable>
+              <Pressable
+                style={styles.menuRow}
+                onPress={() => router.push("/badge")}
+              >
+                <Ionicons
+                  name="trophy-outline"
+                  size={moderateScale(18)}
+                  color={colors.teal}
+                />
+                <Text
+                  style={[styles.menuLabel, { fontSize: moderateScale(13.5), color: colors.textPrimary }]}
+                >
+                  Badges & Achievements
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={moderateScale(15)}
+                  color={colors.gray}
+                />
+              </Pressable>
+            </View>
+          </View>
+
+          <View>
+            <View style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
               <Pressable
                 style={styles.menuRow}
                 onPress={() => router.push("/edit-profile")}
@@ -133,7 +215,7 @@ export default function Profile() {
                   color={colors.teal}
                 />
                 <Text
-                  style={[styles.menuLabel, { fontSize: moderateScale(13.5) }]}
+                  style={[styles.menuLabel, { fontSize: moderateScale(13.5), color: colors.textPrimary }]}
                 >
                   Edit Profile
                 </Text>
@@ -148,18 +230,22 @@ export default function Profile() {
 
           <View>
             <Text
-              style={[styles.sectionTitle, { fontSize: moderateScale(15) }]}
+              style={[styles.sectionTitle, { fontSize: moderateScale(15), color: colors.textSecondary }]}
             >
               Settings
             </Text>
-            <View style={styles.menuCard}>
+            <View style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
               {MENU_ITEMS.map((item, i) => (
-                <View
+                <Pressable
                   key={item.label}
-                  style={[
+                  style={({ pressed }) => [
                     styles.menuRow,
-                    i < MENU_ITEMS.length - 1 && styles.menuDivider,
+                    i < MENU_ITEMS.length - 1 && [styles.menuDivider, { borderBottomColor: colors.divider }],
+                    pressed && { opacity: 0.65 },
                   ]}
+                  onPress={() => {
+                    if (item.route) router.push(item.route);
+                  }}
                 >
                   <Ionicons
                     name={item.icon}
@@ -169,7 +255,7 @@ export default function Profile() {
                   <Text
                     style={[
                       styles.menuLabel,
-                      { fontSize: moderateScale(13.5) },
+                      { fontSize: moderateScale(13.5), color: colors.textPrimary },
                     ]}
                   >
                     {item.label}
@@ -179,7 +265,7 @@ export default function Profile() {
                     size={moderateScale(15)}
                     color={colors.gray}
                   />
-                </View>
+                </Pressable>
               ))}
               <Pressable style={styles.menuRow} onPress={handleLogout}>
                 <Ionicons

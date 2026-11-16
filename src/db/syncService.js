@@ -1,52 +1,104 @@
 // db/syncService.js
 import {
-    arrayUnion,
-    doc,
-    getDoc,
-    getFirestore,
-    increment,
-    setDoc,
-    updateDoc,
+  arrayUnion,
+  doc,
+  getDoc,
+  increment,
+  setDoc,
+  updateDoc,
 } from "firebase/firestore";
-import { app } from "../services/firebaseConfig";
+import { db as firestoreDb } from "../services/firebaseConfig";
+import { subscribeToConnectivity } from "./networkService";
 import { getPendingSync, markSynced } from "./syncQueue";
 
-const firestoreDb = getFirestore(app);
+let isSyncing = false;
 
 export async function syncPendingProgress() {
-  const pendingItems = await getPendingSync();
-  let syncedCount = 0;
+  if (isSyncing) return 0;
+  isSyncing = true;
 
-  for (const item of pendingItems) {
-    try {
-      const progressRef = doc(
-        firestoreDb,
-        "users",
-        item.userId,
-        "progress",
-        item.destinationId,
-      );
+  try {
+    const pendingItems = await getPendingSync();
+    let syncedCount = 0;
 
-      const existing = await getDoc(progressRef);
+    for (const item of pendingItems) {
+      try {
+        const progressRef = doc(
+          firestoreDb,
+          "users",
+          item.userId,
+          "progress",
+          item.destinationId,
+        );
 
-      if (existing.exists()) {
-        await updateDoc(progressRef, {
-          totalPoints: increment(item.pointsEarned),
-          unlockedPoints: arrayUnion(item.pointId),
-        });
-      } else {
-        await setDoc(progressRef, {
-          totalPoints: item.pointsEarned,
-          unlockedPoints: [item.pointId],
-        });
+        const existing = await getDoc(progressRef);
+        let isNewPoint = false;
+        const pointsToAdd = Number(item.pointsEarned || 0);
+
+        if (existing.exists()) {
+          const data = existing.data() || {};
+          const alreadyUnlocked =
+            Array.isArray(data.unlockedPoints) &&
+            data.unlockedPoints.includes(item.pointId);
+
+          if (!alreadyUnlocked) {
+            isNewPoint = true;
+            await updateDoc(progressRef, {
+              totalPoints: increment(pointsToAdd),
+              unlockedPoints: arrayUnion(item.pointId),
+            });
+          }
+        } else {
+          isNewPoint = true;
+          await setDoc(progressRef, {
+            totalPoints: pointsToAdd,
+            unlockedPoints: [item.pointId],
+          });
+        }
+
+        // Also update the root user document so profile stats stay in sync
+        if (isNewPoint && item.userId) {
+          try {
+            const userRef = doc(firestoreDb, "users", item.userId);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              await updateDoc(userRef, {
+                totalPoints: increment(pointsToAdd),
+                pointsUnlocked: increment(1),
+              });
+            }
+          } catch (userErr) {
+            console.log("Sync user root doc error:", userErr.message);
+          }
+        }
+
+        await markSynced(item.id);
+        syncedCount++;
+      } catch (e) {
+        console.log("Sync failed for item", item.id, e);
       }
-
-      await markSynced(item.id);
-      syncedCount++;
-    } catch (e) {
-      console.log("Sync failed for item", item.id, e);
     }
-  }
 
-  return syncedCount;
+    return syncedCount;
+  } finally {
+    isSyncing = false;
+  }
+}
+
+let autoSyncUnsubscribe = null;
+
+export function startAutoSync() {
+  if (autoSyncUnsubscribe) return autoSyncUnsubscribe;
+
+  autoSyncUnsubscribe = subscribeToConnectivity(async (isOnline) => {
+    if (isOnline) {
+      try {
+        await syncPendingProgress();
+      } catch (err) {
+        console.log("Auto-sync error on reconnect:", err);
+      }
+    }
+  });
+
+  return autoSyncUnsubscribe;
 }

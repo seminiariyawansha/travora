@@ -4,8 +4,10 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   Image,
+  ImageBackground,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -15,9 +17,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenContainer from "../../components/ScreenContainer";
 import WeatherBanner from "../../components/WeatherBanner";
 import { useAuth } from "../../context/AuthContext";
+import { useTheme } from "../../context/ThemeContext";
 import { getDestinations } from "../../services/destinationService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
+import { getDestinationPhoto } from "../../utils/destinationImages";
 import { getWeatherForDestination } from "../../weather/weatherFetchService";
 import {
   getBannerWeatherReason,
@@ -35,6 +39,7 @@ export default function Home() {
   const router = useRouter();
   const { moderateScale } = useResponsive();
   const { user, profile } = useAuth();
+  const { colors, isDark } = useTheme();
   const [destinations, setDestinations] = useState([]);
   const [weatherInfo, setWeatherInfo] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -104,17 +109,44 @@ export default function Home() {
     showWeatherExplanationAlert(weatherInfo);
   };
 
+  const handleServicePress = (key) => {
+    switch (key) {
+      case "stories":
+        // Navigate to map tab so user can pick a destination → stories
+        router.push({
+          pathname: "/destination",
+          params: { destinationId: destinations[0]?.id ?? "sigiriya" },
+        });
+        break;
+      case "location":
+        router.push("/(tabs)/map");
+        break;
+      case "weather":
+        showWeatherExplanationAlert(weatherInfo);
+        break;
+      case "offline":
+        router.push({
+          pathname: "/destination",
+          params: { destinationId: destinations[0]?.id ?? "sigiriya" },
+        });
+        break;
+      default:
+        break;
+    }
+  };
+
   const bannerReason = getBannerWeatherReason(weatherInfo);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={["top", "left", "right"]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.bg} />
       <ScreenContainer>
         <View style={styles.header}>
           <View>
-            <Text style={[styles.greeting, { fontSize: moderateScale(12) }]}>
+            <Text style={[styles.greeting, { fontSize: moderateScale(12), color: colors.textSecondary }]}>
               Hello,
             </Text>
-            <Text style={[styles.name, { fontSize: moderateScale(18) }]}>
+            <Text style={[styles.name, { fontSize: moderateScale(18), color: colors.textPrimary }]}>
               {firstName}!
             </Text>
           </View>
@@ -137,6 +169,7 @@ export default function Home() {
                     width: avatarSize,
                     height: avatarSize,
                     borderRadius: avatarSize / 2,
+                    backgroundColor: colors.teal,
                   },
                 ]}
               >
@@ -154,10 +187,10 @@ export default function Home() {
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }}>
-          <View style={styles.searchBar}>
+          <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             <Ionicons name="search" size={17} color={colors.gray} />
             <TextInput
-              style={[styles.searchInput, { fontSize: moderateScale(13.5) }]}
+              style={[styles.searchInput, { fontSize: moderateScale(13.5), color: colors.textPrimary }]}
               placeholder="Search destinations..."
               placeholderTextColor={colors.gray}
               value={searchQuery}
@@ -174,7 +207,7 @@ export default function Home() {
 
           <View>
             <Text
-              style={[styles.sectionTitle, { fontSize: moderateScale(16) }]}
+              style={[styles.sectionTitle, { fontSize: moderateScale(16), color: colors.textPrimary }]}
             >
               {searchQuery
                 ? `Results for "${searchQuery}"`
@@ -182,34 +215,58 @@ export default function Home() {
             </Text>
 
             {filteredDestinations.length === 0 ? (
-              <Text style={styles.emptyText}>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                 {searchQuery
                   ? "No destinations match your search."
                   : "No destinations yet."}
               </Text>
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {filteredDestinations.map((dest) => (
-                  <Pressable
-                    key={dest.id}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/destination",
-                        params: { destinationId: dest.id },
-                      })
-                    }
-                    style={styles.destCard}
-                  >
-                    {dest.sizeMb && (
-                      <Text style={styles.destBadge}>{dest.sizeMb} MB</Text>
-                    )}
-                    <Text
-                      style={[styles.destName, { fontSize: moderateScale(15) }]}
+                {filteredDestinations.map((dest) => {
+                  const isValidPhoto = (url) =>
+                    typeof url === "string" &&
+                    (url.startsWith("http://") || url.startsWith("https://")) &&
+                    !url.includes("wikimedia.org") &&
+                    !url.includes("wikipedia.org") &&
+                    !url.includes("placeholder");
+
+                  const photoUri =
+                    (isValidPhoto(dest.imageUrl) && dest.imageUrl) ||
+                    (isValidPhoto(dest.photoUrl) && dest.photoUrl) ||
+                    getDestinationPhoto(dest.id, dest.name);
+
+                  return (
+                    <Pressable
+                      key={dest.id}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/destination",
+                          params: { destinationId: dest.id },
+                        })
+                      }
+                      style={styles.destCard}
                     >
-                      {dest.name}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <ImageBackground
+                        source={{ uri: photoUri }}
+                        style={styles.destCardBg}
+                        imageStyle={{ borderRadius: 16 }}
+                      >
+                        <View style={styles.destOverlay}>
+                          {dest.sizeMb ? (
+                            <Text style={styles.destBadge}>{dest.sizeMb} MB</Text>
+                          ) : (
+                            <View />
+                          )}
+                          <Text
+                            style={[styles.destName, { fontSize: moderateScale(15) }]}
+                          >
+                            {dest.name}
+                          </Text>
+                        </View>
+                      </ImageBackground>
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             )}
           </View>
@@ -218,14 +275,21 @@ export default function Home() {
             <>
               <View>
                 <Text
-                  style={[styles.sectionTitle, { fontSize: moderateScale(16) }]}
+                  style={[styles.sectionTitle, { fontSize: moderateScale(16), color: colors.textPrimary }]}
                 >
                   Services
                 </Text>
                 <View style={styles.servicesRow}>
                   {SERVICES.map((service) => (
-                    <View key={service.key} style={styles.serviceItem}>
-                      <View style={styles.serviceIcon}>
+                    <Pressable
+                      key={service.key}
+                      style={({ pressed }) => [
+                        styles.serviceItem,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                      onPress={() => handleServicePress(service.key)}
+                    >
+                      <View style={[styles.serviceIcon, { backgroundColor: colors.teal }]}>
                         <Ionicons
                           name={service.icon}
                           size={moderateScale(20)}
@@ -235,12 +299,12 @@ export default function Home() {
                       <Text
                         style={[
                           styles.serviceLabel,
-                          { fontSize: moderateScale(10.5) },
+                          { fontSize: moderateScale(10.5), color: colors.textPrimary },
                         ]}
                       >
                         {service.label}
                       </Text>
-                    </View>
+                    </Pressable>
                   ))}
                 </View>
               </View>
@@ -291,10 +355,19 @@ const styles = StyleSheet.create({
     width: 150,
     height: 170,
     borderRadius: 16,
-    backgroundColor: colors.teal,
     marginRight: 12,
+    overflow: "hidden",
+    backgroundColor: "#1B3A35",
+  },
+  destCardBg: {
+    width: "100%",
+    height: "100%",
+  },
+  destOverlay: {
+    flex: 1,
     padding: 12,
     justifyContent: "space-between",
+    backgroundColor: "rgba(0,0,0,0.38)",
   },
   destBadge: {
     alignSelf: "flex-end",

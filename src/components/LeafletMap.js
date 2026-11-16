@@ -10,33 +10,30 @@ import {
 import { WebView } from "react-native-webview";
 import { colors } from "../theme/colors";
 
-// Keep your team's GitHub repo address here (used as the tile Referer)
-const APP_URL = "https://github.com/seminiariyawansha/travora.git";
-
-// Diagnostic switch: if the map stays blank, set this to false and reload.
-// (It only controls whether the page tells OpenStreetMap who it is.)
-const SEND_REFERER = true;
-
-// How long to wait for the map before showing the error message
-const LOAD_TIMEOUT_MS = 12000;
-
-// If OpenStreetMap ever shows an "Access blocked" picture, change this to "esri"
+// Google Maps & Street tile providers
 const TILE_PROVIDERS = {
+  google: {
+    url: "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+    attribution: "&copy; Google Maps",
+    maxZoom: 20,
+  },
+  googleSatellite: {
+    url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+    attribution: "&copy; Google Maps",
+    maxZoom: 20,
+  },
   osm: {
     url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     attribution: "&copy; OpenStreetMap contributors",
-  },
-  esri: {
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
-    attribution: "Tiles &copy; Esri",
+    maxZoom: 19,
   },
 };
-const ACTIVE_TILES = "osm";
 
-// The page is built once. Pins, the user's dot, the search pin and
-// camera moves are all sent in afterwards through injected scripts.
-function buildHtml(center, zoom) {
-  const tiles = TILE_PROVIDERS[ACTIVE_TILES];
+const DEFAULT_PROVIDER = "google";
+const LOAD_TIMEOUT_MS = 14000;
+
+function buildHtml(center, zoom, tileType = DEFAULT_PROVIDER) {
+  const tileConfig = TILE_PROVIDERS[tileType] || TILE_PROVIDERS.google;
 
   return `<!DOCTYPE html>
 <html>
@@ -45,22 +42,27 @@ function buildHtml(center, zoom) {
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
   html, body, #map { height: 100%; margin: 0; padding: 0; background: #EDE6D8; }
-  .pin { width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
-         border: 3px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.35); }
-  .pin span { display: block; transform: rotate(45deg); color: #fff; font: 700 12px/20px sans-serif; text-align: center; }
+  .pin { width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+         border: 3px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.35); cursor: pointer; }
+  .pin span { display: block; transform: rotate(45deg); color: #fff; font: 700 13px/22px sans-serif; text-align: center; }
   .pin.todo { background: #E07A5F; }
-  .pin.next { background: #C8553D; animation: pulse 1.6s infinite; }
-  .pin.visited { background: #8FA89F; }
-  .pin.search { background: #2B6CB0; }
+  .pin.next { background: #C8553D; animation: pulse 1.5s infinite; }
+  .pin.visited { background: #10534a; }
+  .pin.search { background: #2196F3; }
   @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(200,85,61,.65); }
+    0% { box-shadow: 0 0 0 0 rgba(200,85,61,.75); }
     100% { box-shadow: 0 0 0 16px rgba(200,85,61,0); }
   }
-  .me { width: 16px; height: 16px; border-radius: 50%; background: #1E7A6F;
-        border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(30,122,111,.25); }
+  .me { width: 18px; height: 18px; border-radius: 50%; background: #2196F3;
+        border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(33,150,243,.35); }
+  .leaflet-popup-content-wrapper { border-radius: 14px; padding: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+  .leaflet-popup-content { margin: 10px 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .popup-title { font-size: 13.5px; font-weight: 700; color: #1B1B1B; margin-bottom: 2px; }
+  .popup-status { font-size: 11px; font-weight: 600; color: #10534a; }
+  .popup-btn { margin-top: 8px; width: 100%; background: #10534a; color: #fff; border: none; padding: 6px 12px;
+               border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
 </style>
 <script>
-  // Send messages and errors back to the app so it can show what went wrong
   function post(obj) {
     if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(obj));
   }
@@ -72,38 +74,85 @@ function buildHtml(center, zoom) {
 <body>
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        onerror="post({ type: 'error', message: 'The map library could not be downloaded. Check the internet connection.' })"></script>
+        onerror="post({ type: 'error', message: 'The map library could not be downloaded. Check internet connection.' })"></script>
 <script>
   var map = L.map('map', { zoomControl: false }).setView([${center.lat}, ${center.lng}], ${zoom});
-  L.tileLayer('${tiles.url}', {
-    maxZoom: 19,
-    referrerPolicy: 'strict-origin-when-cross-origin',
-    attribution: '${tiles.attribution}'
+  
+  var currentTileLayer = L.tileLayer('${tileConfig.url}', {
+    maxZoom: ${tileConfig.maxZoom || 19},
+    attribution: '${tileConfig.attribution}'
   }).addTo(map);
 
-  // Safe text for tooltips (names are never treated as HTML)
-  function txt(s) { var el = document.createElement('span'); el.textContent = s; return el; }
+  function setTileType(type) {
+    if (currentTileLayer) map.removeLayer(currentTileLayer);
+    var url = 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
+    if (type === 'satellite') {
+      url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
+    } else if (type === 'osm') {
+      url = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    }
+    currentTileLayer = L.tileLayer(url, { maxZoom: 20 }).addTo(map);
+  }
 
   var markersLayer = L.layerGroup().addTo(map);
+  var routeLayer = L.layerGroup().addTo(map);
   var hasFitted = false;
 
-  function renderPoints(points) {
+  function renderPoints(points, userLoc) {
     markersLayer.clearLayers();
+    routeLayer.clearLayers();
     var bounds = [];
+
+    // 1. Draw connecting walking / scenic route between points
+    var routeCoords = [];
+    if (userLoc && typeof userLoc.latitude === 'number' && typeof userLoc.longitude === 'number') {
+      routeCoords.push([userLoc.latitude, userLoc.longitude]);
+      bounds.push([userLoc.latitude, userLoc.longitude]);
+    }
+
     points.forEach(function (p) {
-      var cls = p.status === 'visited' ? 'visited' : (p.status === 'next' ? 'next' : 'todo');
-      var inner = p.status === 'visited' ? '<span>&#10003;</span>' : '';
-      var icon = L.divIcon({
-        className: '',
-        html: '<div class="pin ' + cls + '">' + inner + '</div>',
-        iconSize: [26, 26],
-        iconAnchor: [13, 26]
-      });
-      var marker = L.marker([p.lat, p.lng], { icon: icon, zIndexOffset: p.status === 'next' ? 1000 : 0 }).addTo(markersLayer);
-      marker.bindTooltip(txt(p.name));
-      marker.on('click', function () { post({ type: 'point', id: p.id }); });
-      bounds.push([p.lat, p.lng]);
+      if (typeof p.lat === 'number' && typeof p.lng === 'number') {
+        routeCoords.push([p.lat, p.lng]);
+        bounds.push([p.lat, p.lng]);
+
+        var cls = p.status === 'visited' ? 'visited' : (p.status === 'next' ? 'next' : 'todo');
+        var inner = p.status === 'visited' ? '<span>&#10003;</span>' : '';
+        var icon = L.divIcon({
+          className: '',
+          html: '<div class="pin ' + cls + '">' + inner + '</div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 28]
+        });
+
+        var marker = L.marker([p.lat, p.lng], {
+          icon: icon,
+          zIndexOffset: p.status === 'next' ? 1000 : 0
+        }).addTo(markersLayer);
+
+        var popupHtml = '<div class="popup-title">' + (p.name || '') + '</div>' +
+          '<div class="popup-status">' + (p.status === 'visited' ? '✓ Visited' : (p.status === 'next' ? '★ Next stop' : '📍 To visit')) + '</div>' +
+          '<button class="popup-btn" onclick="post({ type: \\'point\\', id: \\'' + p.id + '\\' })">Open Story & Info</button>';
+
+        marker.bindPopup(popupHtml);
+        marker.on('click', function () {
+          marker.openPopup();
+          post({ type: 'point', id: p.id });
+        });
+      }
     });
+
+    // Draw route path line showing the roads to visit
+    if (routeCoords.length > 1) {
+      L.polyline(routeCoords, {
+        color: '#10534a',
+        weight: 4,
+        opacity: 0.8,
+        dashArray: '8, 8',
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(routeLayer);
+    }
+
     if (!hasFitted && bounds.length > 1) {
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
       hasFitted = true;
@@ -112,7 +161,7 @@ function buildHtml(center, zoom) {
 
   var meMarker = null;
   function setUser(lat, lng, follow) {
-    var icon = L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+    var icon = L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
     if (meMarker) { meMarker.setLatLng([lat, lng]); }
     else { meMarker = L.marker([lat, lng], { icon: icon, interactive: false }).addTo(map); }
     if (follow) { map.panTo([lat, lng]); }
@@ -128,12 +177,12 @@ function buildHtml(center, zoom) {
   }
   function setSearchMarker(lat, lng, label) {
     clearSearchMarker();
-    var icon = L.divIcon({ className: '', html: '<div class="pin search"></div>', iconSize: [26, 26], iconAnchor: [13, 26] });
+    var icon = L.divIcon({ className: '', html: '<div class="pin search"></div>', iconSize: [28, 28], iconAnchor: [14, 28] });
     searchMarker = L.marker([lat, lng], { icon: icon }).addTo(map);
-    searchMarker.bindTooltip(txt(label), { permanent: true, direction: 'top', offset: [0, -24] });
+    var el = document.createElement('span'); el.textContent = label;
+    searchMarker.bindTooltip(el, { permanent: true, direction: 'top', offset: [0, -24] });
   }
 
-  // Tell the app when the user drags the map, so it stops following the GPS dot
   map.on('dragstart', function () { post({ type: 'moved' }); });
 
   window.mapReady = true;
@@ -151,6 +200,7 @@ export default function LeafletMap({
   followUser = false,
   focus,
   searchMarker,
+  mapType = "google",
   onPointPress,
   onUserMoved,
   height,
@@ -158,19 +208,17 @@ export default function LeafletMap({
   const webRef = useRef(null);
   const readyRef = useRef(false);
   const latest = useRef({});
-  latest.current = { points, userLocation, followUser, focus, searchMarker };
+  latest.current = { points, userLocation, followUser, focus, searchMarker, mapType };
 
-  const [status, setStatus] = useState("loading"); // loading | ready | error
+  const [status, setStatus] = useState("loading");
   const [detail, setDetail] = useState("");
   const [attempt, setAttempt] = useState(0);
 
-  // The page is rebuilt only if the centre or zoom changes
   const html = useMemo(
-    () => buildHtml(center, zoom),
-    [center.lat, center.lng, zoom],
+    () => buildHtml(center, zoom, mapType),
+    [center.lat, center.lng, zoom, mapType],
   );
 
-  // Start (or restart) the loading timer
   useEffect(() => {
     readyRef.current = false;
     setStatus("loading");
@@ -198,13 +246,14 @@ export default function LeafletMap({
     }
   }
 
-  // Run a script in the map page, but only once the page is ready
   function run(code) {
     webRef.current?.injectJavaScript(`if (window.mapReady) { ${code} } true;`);
   }
 
   function sendPoints() {
-    run(`renderPoints(${JSON.stringify(latest.current.points)});`);
+    const pts = latest.current.points || [];
+    const loc = latest.current.userLocation || null;
+    run(`renderPoints(${JSON.stringify(pts)}, ${JSON.stringify(loc)});`);
   }
 
   function sendUser() {
@@ -231,6 +280,11 @@ export default function LeafletMap({
     if (f) run(`focusOn(${f.lat}, ${f.lng}, ${f.zoom || 17});`);
   }
 
+  function sendTileType() {
+    const type = latest.current.mapType || "google";
+    run(`setTileType('${type}');`);
+  }
+
   const pointsKey = JSON.stringify(points);
   const searchKey = searchMarker
     ? `${searchMarker.lat},${searchMarker.lng}`
@@ -238,7 +292,7 @@ export default function LeafletMap({
 
   useEffect(() => {
     sendPoints();
-  }, [pointsKey]);
+  }, [pointsKey, userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
     sendUser();
@@ -252,6 +306,10 @@ export default function LeafletMap({
     sendFocus();
   }, [focus?.key]);
 
+  useEffect(() => {
+    sendTileType();
+  }, [mapType]);
+
   function handleMessage(event) {
     try {
       const message = JSON.parse(event.nativeEvent.data);
@@ -259,7 +317,7 @@ export default function LeafletMap({
       if (message.type === "ready") {
         readyRef.current = true;
         setStatus("ready");
-        // The page is up: send everything the map needs to show
+        sendTileType();
         sendPoints();
         sendUser();
         sendSearchMarker();
@@ -277,14 +335,13 @@ export default function LeafletMap({
   return (
     <View
       style={[styles.wrap, height != null ? { height } : { flex: 1 }]}
-      // When the panel is hidden or shown the map is resized, so tell Leaflet
       onLayout={() => run("map.invalidateSize();")}
     >
       <WebView
         key={attempt}
         ref={webRef}
         originWhitelist={["*"]}
-        source={SEND_REFERER ? { html, baseUrl: APP_URL } : { html }}
+        source={{ html }}
         applicationNameForUserAgent="Travora/1.0"
         javaScriptEnabled
         domStorageEnabled
@@ -303,7 +360,7 @@ export default function LeafletMap({
           {status === "loading" ? (
             <>
               <ActivityIndicator color={colors.teal} />
-              <Text style={styles.overlayText}>Loading map...</Text>
+              <Text style={styles.overlayText}>Loading Google Map & roads...</Text>
             </>
           ) : (
             <>

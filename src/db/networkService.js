@@ -2,6 +2,7 @@
 import NetInfo from "@react-native-community/netinfo";
 
 export function subscribeToConnectivity(onChange) {
+  // onChange receives true (online) or false (offline)
   const unsubscribe = NetInfo.addEventListener((state) => {
     onChange(!!state.isConnected);
   });

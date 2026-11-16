@@ -1,6 +1,6 @@
 // src/app/(tabs)/map.js
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   LayoutAnimation,
@@ -15,16 +15,18 @@ import GpsSimulator from "../../components/GpsSimulator";
 import LeafletMap from "../../components/LeafletMap";
 import MapSearch from "../../components/MapSearch";
 import Tag from "../../components/Tag";
+import { mockPoints } from "../../data/mockData";
 import { getCachedPoints } from "../../db/offlineContentService";
 import { getPendingSync } from "../../db/syncQueue";
 import { useLocation } from "../../hooks/useLocation";
+import { getPoints } from "../../services/destinationService";
 import { auth } from "../../services/firebaseConfig";
 import { getUserProgress } from "../../services/progressService";
 import { unlockNearbyPoints } from "../../services/unlockService";
 import { colors } from "../../theme/colors";
+import { useTheme } from "../../context/ThemeContext";
 import { useResponsive } from "../../theme/responsive";
 
-const destinationId = "sigiriya";
 const SIGIRIYA_CENTER = { lat: 7.957, lng: 80.7603 };
 const VISITED_COLOR = "#8FA89F";
 const NEXT_COLOR = "#C8553D";
@@ -48,9 +50,24 @@ function formatDistance(meters) {
     : `${Math.round(meters)} m away`;
 }
 
+// Normalize coordinate & point field variations
+function normalizePoint(point) {
+  const lat = point.latitude ?? point.lat;
+  const lon = point.longitude ?? point.lon ?? point.lng;
+  const radius = point.radiusMeters ?? point.radius ?? 100;
+  return {
+    ...point,
+    latitude: lat != null ? Number(lat) : null,
+    longitude: lon != null ? Number(lon) : null,
+    radiusMeters: radius != null ? Number(radius) : 100,
+    pointsValue: Number(point.pointsValue || point.points || 10),
+    unlocked: !!point.unlocked,
+  };
+}
+
 // Which point IDs has this tourist already visited? Saved progress from
 // Firestore, plus anything unlocked offline that is still waiting to sync.
-async function loadVisitedIds(userId) {
+async function loadVisitedIds(userId, destinationId) {
   const ids = new Set();
 
   if (userId) {
@@ -81,7 +98,14 @@ async function loadVisitedIds(userId) {
 
 export default function MapScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const destinationId = params.destinationId || "sigiriya";
+
   const { height } = useResponsive();
+  const themeContext = useTheme();
+  const themeColors = themeContext?.colors || colors;
+  const isDark = themeContext?.isDark || false;
+
   const mapHeight = Math.min(Math.max(height * 0.42, 260), 480);
 
   const [points, setPoints] = useState([]);
@@ -90,48 +114,66 @@ export default function MapScreen() {
   const [follow, setFollow] = useState(true);
   const [focus, setFocus] = useState(null);
   const [searchMarker, setSearchMarker] = useState(null);
+  const [mapType, setMapType] = useState("google");
 
   const { location: realLocation, errorMsg: locationError } = useLocation();
   const effectiveLocation = simulatedLocation || realLocation;
   const userId = auth?.currentUser?.uid;
 
-  // Load the downloaded (cached) points and which of them are already visited.
-  // Runs every time this tab is opened, so a point unlocked elsewhere updates here.
+  // Load points with robust 3-tier fallback (SQLite -> Firestore -> mockPoints)
+  // Runs every time this tab is focused so progress is always current.
   useFocusEffect(
     useCallback(() => {
       let active = true;
 
       async function load() {
-        try {
-          const cachedPoints = await getCachedPoints(destinationId);
-          const visited = await loadVisitedIds(userId);
-          if (!active) return;
+        let rawPoints = [];
 
-          setPoints((previous) =>
-            cachedPoints.map((point) => ({
-              ...point,
-              // visited = saved progress, or already unlocked during this session
-              unlocked:
-                visited.has(point.id) ||
-                previous.find((p) => p.id === point.id)?.unlocked === true,
-              latitude: point.latitude === null ? null : Number(point.latitude),
-              longitude:
-                point.longitude === null ? null : Number(point.longitude),
-              radiusMeters:
-                point.radiusMeters === null ? null : Number(point.radiusMeters),
-              pointsValue: Number(point.pointsValue || 0),
-            })),
-          );
+        // 1. Try SQLite offline cache first
+        try {
+          const cached = await getCachedPoints(destinationId);
+          if (Array.isArray(cached) && cached.length > 0) {
+            rawPoints = cached;
+          }
         } catch (error) {
-          console.error("Failed to load cached tourist points:", error);
+          console.log("Map: local cache unavailable:", error.message);
         }
+
+        // 2. If SQLite has no points, try online Firestore
+        if (rawPoints.length === 0) {
+          try {
+            const onlinePoints = await getPoints(destinationId);
+            if (Array.isArray(onlinePoints) && onlinePoints.length > 0) {
+              rawPoints = onlinePoints;
+            }
+          } catch (error) {
+            console.log("Map: online points fetch failed:", error.message);
+          }
+        }
+
+        // 3. Fallback to mock data so map is never blank
+        if (rawPoints.length === 0) {
+          rawPoints = mockPoints[destinationId] || mockPoints.sigiriya || [];
+        }
+
+        const visited = await loadVisitedIds(userId, destinationId);
+        if (!active) return;
+
+        setPoints((previous) =>
+          rawPoints.map(normalizePoint).map((point) => ({
+            ...point,
+            unlocked:
+              visited.has(point.id) ||
+              previous.find((p) => p.id === point.id)?.unlocked === true,
+          })),
+        );
       }
 
       load();
       return () => {
         active = false;
       };
-    }, [userId]),
+    }, [userId, destinationId]),
   );
 
   // Add distance and a status to every point:
@@ -174,8 +216,6 @@ export default function MapScreen() {
   }, [points, effectiveLocation?.latitude, effectiveLocation?.longitude]);
 
   // Check and unlock nearby points whenever location changes.
-  // Only points not visited yet are checked, so a visited point never
-  // triggers the unlock screen a second time.
   useEffect(() => {
     let isMounted = true;
 
@@ -196,7 +236,6 @@ export default function MapScreen() {
         if (isMounted && newlyUnlocked.length > 0) {
           console.log("Newly unlocked points:", newlyUnlocked);
 
-          // Create new point objects so React refreshes the markers and list.
           setPoints((currentPoints) =>
             currentPoints.map((point) =>
               newlyUnlocked.some((unlocked) => unlocked.id === point.id)
@@ -206,12 +245,12 @@ export default function MapScreen() {
           );
 
           const unlockedPoint = newlyUnlocked[0];
-
           router.push({
             pathname: "/unlock",
             params: {
               pointId: unlockedPoint.id,
               pointsEarned: unlockedPoint.pointsValue ?? 10,
+              destinationId,
             },
           });
         }
@@ -230,6 +269,7 @@ export default function MapScreen() {
     effectiveLocation?.longitude,
     userId,
     points,
+    destinationId,
   ]);
 
   // The simple shape the map needs for each pin
@@ -249,11 +289,19 @@ export default function MapScreen() {
     [allPoints],
   );
 
+  // Map center from points or default
+  const mapCenter = useMemo(() => {
+    const first = allPoints.find(
+      (p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude),
+    );
+    return first ? { lat: first.latitude, lng: first.longitude } : SIGIRIYA_CENTER;
+  }, [allPoints]);
+
   function openStory(pointId) {
     router.push({ pathname: "/story", params: { pointId, destinationId } });
   }
 
-  // Tapping a pin: visited points open their story, others just show their name
+  // Tapping a pin: visited points open their story, others show name
   function handlePinPress(pointId) {
     const point = allPoints.find((p) => p.id === pointId);
     if (point?.unlocked) openStory(pointId);
@@ -285,6 +333,13 @@ export default function MapScreen() {
         zoom: 17,
         key: Date.now(),
       });
+    } else if (mapCenter) {
+      setFocus({
+        lat: mapCenter.lat,
+        lng: mapCenter.lng,
+        zoom: 16,
+        key: Date.now(),
+      });
     }
   }
 
@@ -300,13 +355,20 @@ export default function MapScreen() {
       ? VISITED_COLOR
       : isNext
         ? NEXT_COLOR
-        : colors.terracotta;
+        : themeColors.terracotta;
 
     return (
       <Pressable
         key={point.id}
         onPress={onPress}
-        style={[styles.pointRow, isVisited && styles.pointRowVisited]}
+        style={[
+          styles.pointRow,
+          {
+            backgroundColor: themeColors.surface,
+            borderColor: themeColors.cardBorder,
+          },
+          isVisited && (isDark ? { backgroundColor: "#1A2E28" } : styles.pointRowVisited),
+        ]}
       >
         <View style={[styles.rowDot, { backgroundColor: dot }]}>
           {isVisited && (
@@ -314,11 +376,17 @@ export default function MapScreen() {
           )}
         </View>
         <View style={{ flex: 1, gap: 3 }}>
-          <Text style={[styles.pointName, isVisited && { color: colors.gray }]}>
+          <Text
+            style={[
+              styles.pointName,
+              { color: themeColors.textPrimary },
+              isVisited && { color: themeColors.textSecondary },
+            ]}
+          >
             {point.name}
           </Text>
           {formatDistance(point.distance) && (
-            <Text style={styles.distance}>
+            <Text style={[styles.distance, { color: themeColors.textSecondary }]}>
               {formatDistance(point.distance)}
             </Text>
           )}
@@ -336,8 +404,11 @@ export default function MapScreen() {
     : 0;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      {/* Map area: fixed height with the panel open, fills the screen when it's hidden */}
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: themeColors.bg }]}
+      edges={["top", "left", "right"]}
+    >
+      {/* Map area: fixed height with panel open, fills screen when hidden */}
       <View
         style={[
           styles.mapWrap,
@@ -345,13 +416,14 @@ export default function MapScreen() {
         ]}
       >
         <LeafletMap
-          center={SIGIRIYA_CENTER}
+          center={mapCenter}
           zoom={16}
           points={mapPoints}
           userLocation={effectiveLocation}
           followUser={follow}
           focus={focus}
           searchMarker={searchMarker}
+          mapType={mapType}
           onPointPress={handlePinPress}
           onUserMoved={() => setFollow(false)}
         />
@@ -364,32 +436,80 @@ export default function MapScreen() {
         />
 
         {/* Legend */}
-        <View style={styles.legend}>
+        <View
+          style={[
+            styles.legend,
+            isDark && { backgroundColor: "rgba(30,30,30,0.92)" },
+          ]}
+        >
           <View style={styles.legendItem}>
             <View
               style={[styles.legendDot, { backgroundColor: VISITED_COLOR }]}
             />
-            <Text style={styles.legendText}>Visited</Text>
+            <Text
+              style={[
+                styles.legendText,
+                { color: themeColors.textPrimary },
+              ]}
+            >
+              Visited
+            </Text>
           </View>
           <View style={styles.legendItem}>
             <View
-              style={[styles.legendDot, { backgroundColor: colors.terracotta }]}
+              style={[styles.legendDot, { backgroundColor: themeColors.terracotta }]}
             />
-            <Text style={styles.legendText}>To visit</Text>
+            <Text
+              style={[
+                styles.legendText,
+                { color: themeColors.textPrimary },
+              ]}
+            >
+              To visit
+            </Text>
           </View>
         </View>
 
+        {/* Map style toggle (Roads / Satellite) */}
+        <Pressable
+          style={[
+            styles.layerButton,
+            { backgroundColor: themeColors.surface },
+          ]}
+          onPress={() => setMapType((m) => (m === "google" ? "satellite" : "google"))}
+          hitSlop={6}
+        >
+          <Ionicons
+            name={mapType === "google" ? "earth-outline" : "map-outline"}
+            size={20}
+            color={themeColors.teal}
+          />
+        </Pressable>
+
         {/* Locate me */}
-        <Pressable style={styles.locateButton} onPress={locateMe} hitSlop={6}>
+        <Pressable
+          style={[
+            styles.locateButton,
+            { backgroundColor: themeColors.surface },
+          ]}
+          onPress={locateMe}
+          hitSlop={6}
+        >
           <Ionicons
             name={follow ? "navigate" : "navigate-outline"}
             size={20}
-            color={colors.teal}
+            color={themeColors.teal}
           />
         </Pressable>
 
         {/* Hide / show the panel */}
-        <Pressable style={styles.toggleButton} onPress={togglePanel}>
+        <Pressable
+          style={[
+            styles.toggleButton,
+            { backgroundColor: themeColors.teal },
+          ]}
+          onPress={togglePanel}
+        >
           <Ionicons
             name={panelOpen ? "chevron-down" : "chevron-up"}
             size={16}
@@ -412,25 +532,53 @@ export default function MapScreen() {
             <Text style={styles.errorText}>GPS Notice: {locationError}</Text>
           )}
 
-          <View style={styles.progressCard}>
+          <View
+            style={[
+              styles.progressCard,
+              {
+                backgroundColor: themeColors.surface,
+                borderColor: themeColors.cardBorder,
+              },
+            ]}
+          >
             <View style={styles.progressHeader}>
-              <Text style={styles.sectionTitle}>Your progress</Text>
-              <Text style={styles.progressCount}>
+              <Text
+                style={[styles.sectionTitle, { color: themeColors.textPrimary }]}
+              >
+                Your progress
+              </Text>
+              <Text
+                style={[
+                  styles.progressCount,
+                  { color: themeColors.textSecondary },
+                ]}
+              >
                 {visited.length} of {allPoints.length} visited
               </Text>
             </View>
-            <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressTrack,
+                { backgroundColor: themeColors.divider },
+              ]}
+            >
               <View
                 style={[styles.progressFill, { width: `${progressPercent}%` }]}
               />
             </View>
           </View>
 
-          <Text style={styles.sectionTitle}>To visit ({toVisit.length})</Text>
+          <Text
+            style={[styles.sectionTitle, { color: themeColors.textPrimary }]}
+          >
+            To visit ({toVisit.length})
+          </Text>
           {toVisit.length === 0 ? (
-            <Text style={styles.emptyText}>
+            <Text
+              style={[styles.emptyText, { color: themeColors.textSecondary }]}
+            >
               {allPoints.length === 0
-                ? "No points yet. Download the destination first."
+                ? "No points found. Check your internet connection or download destination."
                 : "You've visited every point here. Well done!"}
             </Text>
           ) : (
@@ -439,7 +587,12 @@ export default function MapScreen() {
 
           {visited.length > 0 && (
             <>
-              <Text style={[styles.sectionTitle, { marginTop: 6 }]}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  { color: themeColors.textPrimary, marginTop: 6 },
+                ]}
+              >
                 Visited ({visited.length})
               </Text>
               {visited.map((point) =>
@@ -473,6 +626,23 @@ const styles = StyleSheet.create({
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { fontSize: 11, fontWeight: "600", color: colors.ink },
 
+  layerButton: {
+    position: "absolute",
+    right: 12,
+    bottom: 90,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+    zIndex: 5,
+  },
   locateButton: {
     position: "absolute",
     right: 12,
