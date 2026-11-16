@@ -87,30 +87,39 @@ export default function Profile() {
           </Text>
 
           <View style={styles.statsRow}>
-            <View style={styles.statBox}>
+            <Pressable
+              style={({ pressed }) => [styles.statBox, pressed && { opacity: 0.8 }]}
+              onPress={() => router.push("/badge")}
+            >
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
                 {stats.totalPoints}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Total Points
               </Text>
-            </View>
-            <View style={styles.statBox}>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.statBox, pressed && { opacity: 0.8 }]}
+              onPress={() => router.push("/progress")}
+            >
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
                 {stats.destinationsVisited}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Destinations
               </Text>
-            </View>
-            <View style={styles.statBox}>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.statBox, pressed && { opacity: 0.8 }]}
+              onPress={() => router.push("/progress")}
+            >
               <Text style={[styles.statValue, { fontSize: moderateScale(17) }]}>
                 {stats.pointsUnlocked}
               </Text>
               <Text style={[styles.statLabel, { fontSize: moderateScale(10) }]}>
                 Points Unlocked
               </Text>
-            </View>
+            </Pressable>
           </View>
         </View>
 
@@ -121,6 +130,56 @@ export default function Profile() {
             paddingBottom: insets.bottom + 20,
           }}
         >
+          <View>
+            <Text
+              style={[styles.sectionTitle, { fontSize: moderateScale(15) }]}
+            >
+              My Activity
+            </Text>
+            <View style={styles.menuCard}>
+              <Pressable
+                style={[styles.menuRow, styles.menuDivider]}
+                onPress={() => router.push("/progress")}
+              >
+                <Ionicons
+                  name="stats-chart-outline"
+                  size={moderateScale(18)}
+                  color={colors.teal}
+                />
+                <Text
+                  style={[styles.menuLabel, { fontSize: moderateScale(13.5) }]}
+                >
+                  Destination Progress
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={moderateScale(15)}
+                  color={colors.gray}
+                />
+              </Pressable>
+              <Pressable
+                style={styles.menuRow}
+                onPress={() => router.push("/badge")}
+              >
+                <Ionicons
+                  name="trophy-outline"
+                  size={moderateScale(18)}
+                  color={colors.teal}
+                />
+                <Text
+                  style={[styles.menuLabel, { fontSize: moderateScale(13.5) }]}
+                >
+                  Badges & Achievements
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={moderateScale(15)}
+                  color={colors.gray}
+                />
+              </Pressable>
+            </View>
+          </View>
+
           <View>
             <View style={styles.menuCard}>
               <Pressable

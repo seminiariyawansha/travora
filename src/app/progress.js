@@ -1,6 +1,6 @@
 // src/app/progress.js
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,24 +14,38 @@ import {
 import Tag from "../components/Tag";
 import { getCachedPoints } from "../db/offlineContentService";
 import { auth } from "../services/firebaseConfig";
-import { getPoints } from "../services/destinationService";
+import { getDestination, getPoints } from "../services/destinationService";
 import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
 
 export default function Progress() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const destinationId = params.destinationId || "sigiriya";
+
   const [points, setPoints] = useState([]);
-  const [destName, setDestName] = useState("Sigiriya");
+  const [destName, setDestName] = useState(
+    destinationId === "galle-fort" ? "Galle Fort" : "Sigiriya"
+  );
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      const destinationId = "sigiriya";
 
       async function loadProgress() {
         setLoading(true);
         try {
+          // 0. Load destination name
+          try {
+            const dest = await getDestination(destinationId);
+            if (dest?.name && active) {
+              setDestName(dest.name);
+            }
+          } catch {
+            // keep fallback
+          }
+
           // 1. Load points (Firebase first, SQLite fallback)
           let rawPoints = [];
           try {
@@ -66,8 +80,10 @@ export default function Progress() {
       }
 
       loadProgress();
-      return () => { active = false; };
-    }, [])
+      return () => {
+        active = false;
+      };
+    }, [destinationId])
   );
 
   const unlockedCount = points.filter((p) => p.unlocked).length;

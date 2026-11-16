@@ -190,13 +190,27 @@ export default function Destination() {
           { height: heroHeight + insets.top, paddingTop: insets.top + 12 },
         ]}
       >
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={20} color={colors.white} />
-        </Pressable>
+        <View style={styles.heroTopRow}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.backButton}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={20} color={colors.white} />
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/progress",
+                params: { destinationId: destinationId ?? "sigiriya" },
+              })
+            }
+            style={styles.progressBtn}
+          >
+            <Ionicons name="ribbon-outline" size={15} color={colors.white} />
+            <Text style={styles.progressBtnText}>Progress</Text>
+          </Pressable>
+        </View>
         <Text style={[styles.heroTitle, { fontSize: moderateScale(26) }]}>
           {destination?.name || "Destination"}
         </Text>
@@ -292,6 +306,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     justifyContent: "space-between",
     paddingBottom: 18,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  progressBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+  },
+  progressBtnText: {
+    color: colors.white,
+    fontWeight: "600",
+    fontSize: 12,
   },
   backButton: {
     width: 36,
