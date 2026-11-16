@@ -14,7 +14,7 @@ import {
 } from "react-native-safe-area-context";
 import Button from "../components/Button";
 import ScreenContainer from "../components/ScreenContainer";
-import { loginUser } from "../services/authService";
+import { getUserProfile, loginUser } from "../services/authService";
 import { colors } from "../theme/colors";
 import { useResponsive } from "../theme/responsive";
 
@@ -36,7 +36,17 @@ export default function Login() {
 
     setLoading(true);
     try {
-      await loginUser(email, password);
+      const user = await loginUser(email, password);
+      // If the logged in user is an admin, navigate directly to admin dashboard
+      try {
+        const profile = await getUserProfile(user.uid);
+        if (profile?.role === "admin") {
+          router.replace("/admin/dashboard");
+          return;
+        }
+      } catch (profileErr) {
+        // Fall back to standard app on profile check failure
+      }
       router.replace("/(tabs)");
     } catch (err) {
       if (
@@ -101,6 +111,13 @@ export default function Login() {
         >
           <Text style={styles.link}>Don't have an account? Register</Text>
         </Pressable>
+
+        <Pressable
+          onPress={() => router.push("/admin/login")}
+          style={{ marginTop: 24, alignItems: "center" }}
+        >
+          <Text style={styles.adminLink}>Admin Portal ›</Text>
+        </Pressable>
       </ScreenContainer>
     </SafeAreaView>
   );
@@ -130,5 +147,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     textAlign: "center",
+  },
+  adminLink: {
+    color: colors.gray,
+    fontSize: 12.5,
+    fontWeight: "500",
+    textDecorationLine: "underline",
   },
 });
