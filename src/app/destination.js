@@ -154,22 +154,29 @@ export default function Destination() {
       const result = await downloadDestination(destinationId);
       console.log("Download result:", result);
 
-      const saved = result?.savedCount ?? result?.pointCount ?? 0;
+      const pointCount = result?.pointCount ?? 0;
+      const savedCount = result?.savedCount ?? 0;
+      const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
 
-      if (saved > 0) {
-        setDownloadMessage(
-          `Downloaded ${saved} point(s). This destination now works offline.`,
-        );
-        // Refresh the list so downloaded points show up right away
-        loadScreen(() => true);
-      } else if (result?.pointCount === 0) {
+      if (pointCount === 0) {
         setDownloadMessage(
           "Nothing to download yet. An admin needs to add points first.",
         );
-      } else {
+      } else if (savedCount === 0) {
         setDownloadMessage(
           "Points were found but could not be saved. Check that each point has content.",
         );
+      } else if (skipped.length > 0) {
+        const firstReason = skipped[0]?.reason ? ` (${skipped[0].reason})` : "";
+        setDownloadMessage(
+          `Downloaded ${savedCount} of ${pointCount} points. ${skipped.length} could not be saved.${firstReason}`,
+        );
+        loadScreen(() => true);
+      } else {
+        setDownloadMessage(
+          `Downloaded all ${pointCount} points. This destination now works offline.`,
+        );
+        loadScreen(() => true);
       }
     } catch (error) {
       console.log("Download failed:", error.message);

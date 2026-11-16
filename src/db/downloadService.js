@@ -8,6 +8,17 @@ import {
 } from "../services/destinationService";
 import { getDb } from "./database";
 
+function isDirectVideoUrl(url) {
+  if (!url || typeof url !== "string" || !url.trim()) return false;
+  const lower = url.trim().toLowerCase();
+  if (lower.includes("youtube.com") || lower.includes("youtu.be")) return false;
+  return (
+    lower.startsWith("http://") ||
+    lower.startsWith("https://") ||
+    lower.startsWith("file://")
+  );
+}
+
 async function downloadFile(remoteUrl, localFileName) {
   if (!remoteUrl || typeof remoteUrl !== "string" || !remoteUrl.trim()) {
     return null;
@@ -27,18 +38,22 @@ export async function downloadDestination(destinationId) {
   const db = await getDb();
 
   let savedCount = 0;
-  const skipped = []; // ids of points that could not be saved
+  const skipped = []; // objects { id, reason } of points that could not be saved
 
   for (const point of points) {
     try {
       const content =
         (await getPointContent(destinationId, point.id)) || point.content;
       if (!content) {
-        skipped.push(point.id);
+        const reason = "no content";
+        skipped.push({ id: point.id, reason });
+        console.log(`Skipped point ${point.id}: ${reason}`);
         continue;
       }
 
       const cleanPointId = String(point.id).replace(/[^a-zA-Z0-9_-]/g, "_");
+      let hadBadImage = false;
+      let hadBadVideo = false;
 
       // Download each image safely
       const localImagePaths = [];
@@ -52,7 +67,9 @@ export async function downloadDestination(destinationId) {
               `${cleanPointId}_image_${i}.jpg`,
             );
             if (localPath) localImagePaths.push(localPath);
+            else hadBadImage = true;
           } catch (imgErr) {
+            hadBadImage = true;
             console.log(
               `Failed to download image ${i} for point ${point.id}:`,
               imgErr?.message || imgErr,
@@ -61,24 +78,28 @@ export async function downloadDestination(destinationId) {
         }
       }
 
-      // Download the video, if there is one
+      // Download the video, if there is one (skip non-direct or youtube URLs cleanly)
       let localVideoPath = null;
-      if (
-        content.videoUrl &&
-        typeof content.videoUrl === "string" &&
-        content.videoUrl.trim()
-      ) {
+      if (isDirectVideoUrl(content.videoUrl)) {
         try {
           localVideoPath = await downloadFile(
             content.videoUrl,
             `${cleanPointId}_video.mp4`,
           );
         } catch (vidErr) {
+          hadBadVideo = true;
           console.log(
             `Failed to download video for point ${point.id}:`,
             vidErr?.message || vidErr,
           );
         }
+      }
+
+      if (hadBadImage || hadBadVideo) {
+        const issues = [];
+        if (hadBadImage) issues.push("bad image link");
+        if (hadBadVideo) issues.push("bad video link");
+        console.log(`Partial point saved ${point.id}: ${issues.join(", ")}`);
       }
 
       // Save everything into the local database
@@ -103,7 +124,7 @@ export async function downloadDestination(destinationId) {
       savedCount++;
     } catch (error) {
       console.log("Could not download point", point.id, error);
-      skipped.push(point.id);
+      skipped.push({ id: point.id, reason: error?.message || "database error" });
     }
   }
 
@@ -111,6 +132,6 @@ export async function downloadDestination(destinationId) {
     destination,
     pointCount: points.length, // points found in Firebase
     savedCount, // points really saved on the phone
-    skipped, // points that failed or had no content
+    skipped, // points that failed or had no content: [{ id, reason }]
   };
 }
