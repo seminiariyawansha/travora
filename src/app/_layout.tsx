@@ -1,18 +1,30 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Stack } from "expo-router";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AuthProvider } from "../context/AuthContext";
+import { ThemeProvider } from "../context/ThemeContext";
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="onboarding" />
+            <Stack.Screen name="login" />
+            <Stack.Screen name="register" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="destination" />
+            <Stack.Screen name="story" />
+            <Stack.Screen name="unlock" />
+            <Stack.Screen name="progress" />
+            <Stack.Screen name="badge" />
+            <Stack.Screen name="appearance" />
+            <Stack.Screen name="location-permissions" />
+            <Stack.Screen name="downloaded-destinations" />
+          </Stack>
+        </AuthProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
