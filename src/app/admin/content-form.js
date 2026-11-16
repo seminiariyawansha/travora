@@ -17,6 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import ImagePickerField from "../../components/admin/ImagePickerField";
 import MediaPickerField from "../../components/admin/MediaPickerField";
 import Button from "../../components/Button";
+import Dropdown from "../../components/Dropdown";
 import { getAllPoints, saveContent } from "../../services/adminService";
 import { uploadToCloudinary } from "../../services/cloudinaryService";
 import { colors } from "../../theme/colors";
@@ -212,23 +213,18 @@ export default function ContentForm() {
           {points.length === 0 ? (
             <Text style={styles.hint}>No points yet. Add a point first.</Text>
           ) : (
-            <View style={styles.chipRow}>
-              {points.map((p) => {
-                const active =
-                  selected?.id === p.id && selected?.destinationId === p.destinationId;
-                return (
-                  <Pressable
-                    key={`${p.destinationId}/${p.id}`}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() => choosePoint(p)}
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                      {p.destinationName} · {p.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <Dropdown
+              value={selected ? `${selected.destinationId}/${selected.id}` : null}
+              placeholder="Select a point"
+              options={points.map((p) => ({
+                label: `${p.destinationName} · ${p.name}`,
+                value: `${p.destinationId}/${p.id}`,
+              }))}
+              onChange={(key) => {
+                const p = points.find((pt) => `${pt.destinationId}/${pt.id}` === key);
+                if (p) choosePoint(p);
+              }}
+            />
           )}
 
           <Text style={styles.section}>Story</Text>
@@ -297,19 +293,13 @@ export default function ContentForm() {
           ))}
 
           <Text style={styles.label}>Correct answer</Text>
-          <View style={styles.chipRow}>
-            {OPTION_KEYS.map((k) => (
-              <Pressable
-                key={k}
-                style={[styles.chip, correct === k && styles.chipActive]}
-                onPress={() => setCorrect(k)}
-              >
-                <Text style={[styles.chipText, correct === k && styles.chipTextActive]}>
-                  {k}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <Dropdown
+            value={correct || null}
+            placeholder="Select the correct answer"
+            searchable={false}
+            options={OPTION_KEYS.map((k) => ({ label: `Option ${k}`, value: k }))}
+            onChange={setCorrect}
+          />
 
           <Text style={styles.label}>Points for a correct answer</Text>
           <TextInput
@@ -362,17 +352,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   multiline: { minHeight: 120, textAlignVertical: "top" },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
-  chip: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-  },
-  chipActive: { backgroundColor: colors.teal, borderColor: colors.teal },
-  chipText: { color: colors.ink, fontSize: 13, fontWeight: "600" },
-  chipTextActive: { color: colors.white },
   btnWrap: { marginTop: 10 },
 });
