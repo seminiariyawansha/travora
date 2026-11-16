@@ -169,7 +169,8 @@ export default function Destination() {
 
       const pointCount = result?.pointCount ?? 0;
       const savedCount = result?.savedCount ?? 0;
-      const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
+      const skipped   = Array.isArray(result?.skipped)   ? result.skipped   : [];
+      const noContent = Array.isArray(result?.noContent) ? result.noContent : [];
 
       if (pointCount === 0) {
         setDownloadMessage(
@@ -177,12 +178,17 @@ export default function Destination() {
         );
       } else if (savedCount === 0) {
         setDownloadMessage(
-          "Points were found but could not be saved. Check that each point has content.",
+          "Could not save any points. Please check your connection and try again.",
         );
       } else if (skipped.length > 0) {
         const firstReason = skipped[0]?.reason ? ` (${skipped[0].reason})` : "";
         setDownloadMessage(
           `Downloaded ${savedCount} of ${pointCount} points. ${skipped.length} could not be saved.${firstReason}`,
+        );
+        loadScreen(() => true);
+      } else if (noContent.length > 0) {
+        setDownloadMessage(
+          `Downloaded ${savedCount} points. ${noContent.length} have no story, images or video yet.`,
         );
         loadScreen(() => true);
       } else {

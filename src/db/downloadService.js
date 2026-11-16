@@ -29,6 +29,11 @@ async function downloadFile(remoteUrl, localFileName) {
   }
   const localPath = FileSystem.documentDirectory + localFileName;
   const result = await FileSystem.downloadAsync(remoteUrl, localPath);
+  // Treat HTTP errors (403 forbidden, 404 not found, etc.) as failures
+  if (result.status && result.status >= 400) {
+    console.log(`downloadFile: HTTP ${result.status} for ${localFileName}`);
+    return null;
+  }
   return result.uri;
 }
 
