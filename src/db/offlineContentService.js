@@ -48,6 +48,21 @@ export async function getCachedPointById(pointId) {
   return formatCachedPoint(row);
 }
 
+export async function getCachedDestinations() {
+  const db = await getDb();
+  const rows = await db.getAllAsync("SELECT * FROM cached_destinations");
+  return rows || [];
+}
+
+export async function getCachedDestinationById(id) {
+  const db = await getDb();
+  const row = await db.getFirstAsync(
+    "SELECT * FROM cached_destinations WHERE id = ?",
+    [id],
+  );
+  return row || null;
+}
+
 /** Returns a list of unique destinations that have cached points */
 export async function getAllCachedDestinations() {
   try {

@@ -17,7 +17,10 @@ import ScreenContainer from "../components/ScreenContainer";
 import Tag from "../components/Tag";
 import WeatherBanner from "../components/WeatherBanner";
 import { downloadDestination } from "../db/downloadService";
-import { getCachedPoints } from "../db/offlineContentService";
+import {
+  getCachedDestinationById,
+  getCachedPoints,
+} from "../db/offlineContentService";
 import { getDestination, getPoints } from "../services/destinationService";
 import { auth } from "../services/firebaseConfig";
 import { getUserProgress } from "../services/progressService";
@@ -67,6 +70,16 @@ export default function Destination() {
       } catch (error) {
         onlineFailed = true;
         console.log("Online load failed, trying offline data:", error.message);
+      }
+
+      // If online destination fetch failed or returned null, fall back to cached destination
+      if (!dest) {
+        try {
+          const cachedDest = await getCachedDestinationById(destinationId);
+          if (cachedDest) dest = cachedDest;
+        } catch (destErr) {
+          console.log("Offline destination load failed:", destErr?.message);
+        }
       }
 
       // 2. If Firebase gave no points, fall back to the downloaded (offline) points

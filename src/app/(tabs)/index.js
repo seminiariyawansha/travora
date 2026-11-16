@@ -18,6 +18,8 @@ import ScreenContainer from "../../components/ScreenContainer";
 import WeatherBanner from "../../components/WeatherBanner";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
+import { isOnlineNow } from "../../db/networkService";
+import { getCachedDestinations } from "../../db/offlineContentService";
 import { getDestinations } from "../../services/destinationService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
@@ -43,6 +45,7 @@ export default function Home() {
   const [destinations, setDestinations] = useState([]);
   const [weatherInfo, setWeatherInfo] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   // Always read the live logged-in user, so edits made on the
   // Edit Profile screen show up here automatically.
@@ -57,12 +60,30 @@ export default function Home() {
 
       async function fetchHomeData() {
         try {
-          const list = await getDestinations();
+          const online = await isOnlineNow();
+          let list = [];
+          if (online) {
+            try {
+              list = await getDestinations();
+            } catch (onlineErr) {
+              console.log("Online destinations fetch failed:", onlineErr?.message);
+            }
+          }
+
+          if (!list || list.length === 0) {
+            list = await getCachedDestinations();
+            if (active && (!online || list.length > 0)) {
+              setIsOfflineMode(true);
+            }
+          } else if (active) {
+            setIsOfflineMode(false);
+          }
+
           if (!active) return;
-          setDestinations(list);
+          setDestinations(list || []);
 
           // Find first destination with valid coordinates
-          const destWithCoords = list.find(
+          const destWithCoords = (list || []).find(
             (d) =>
               d?.latitude != null &&
               d?.longitude != null &&
@@ -91,6 +112,13 @@ export default function Home() {
           }
         } catch (error) {
           console.log("Failed to load destinations on home:", error?.message);
+          try {
+            const cached = await getCachedDestinations();
+            if (active) {
+              setDestinations(cached);
+              setIsOfflineMode(true);
+            }
+          } catch {}
         }
       }
 
@@ -206,6 +234,19 @@ export default function Home() {
           </View>
 
           <View>
+            {isOfflineMode && (
+              <View style={{ marginBottom: 8, paddingHorizontal: 2 }}>
+                <Text
+                  style={{
+                    fontSize: moderateScale(12),
+                    color: colors.terracotta,
+                    fontWeight: "600",
+                  }}
+                >
+                  Offline: showing downloaded destinations
+                </Text>
+              </View>
+            )}
             <Text
               style={[styles.sectionTitle, { fontSize: moderateScale(16), color: colors.textPrimary }]}
             >

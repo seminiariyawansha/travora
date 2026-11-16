@@ -55,6 +55,8 @@ export default function Login() {
         err.code === "auth/user-not-found"
       ) {
         setError("Incorrect email or password.");
+      } else if (err.code === "auth/network-request-failed") {
+        setError("No internet. Connect and try again.");
       } else {
         setError("Something went wrong. Please try again.");
       }

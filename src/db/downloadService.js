@@ -37,6 +37,46 @@ export async function downloadDestination(destinationId) {
   const points = (await getPoints(destinationId)) || [];
   const db = await getDb();
 
+  // Save destination into cached_destinations
+  if (destination) {
+    let localHeroImage = destination.imageUrl || null;
+    if (
+      destination.imageUrl &&
+      typeof destination.imageUrl === "string" &&
+      destination.imageUrl.startsWith("http")
+    ) {
+      try {
+        const cleanDestId = String(destinationId).replace(/[^a-zA-Z0-9_-]/g, "_");
+        const downloadedHero = await downloadFile(
+          destination.imageUrl,
+          `${cleanDestId}_hero.jpg`,
+        );
+        if (downloadedHero) localHeroImage = downloadedHero;
+      } catch (heroErr) {
+        console.log(
+          "Failed to download hero image for destination:",
+          destinationId,
+          heroErr?.message,
+        );
+      }
+    }
+
+    await db.runAsync(
+      `INSERT OR REPLACE INTO cached_destinations
+       (id, name, description, location, latitude, longitude, imageUrl)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        destinationId,
+        destination.name ?? "",
+        destination.description ?? "",
+        destination.location ?? "",
+        destination.latitude != null ? Number(destination.latitude) : null,
+        destination.longitude != null ? Number(destination.longitude) : null,
+        localHeroImage,
+      ],
+    );
+  }
+
   let savedCount = 0;
   const skipped = []; // objects { id, reason } of points that could not be saved
 

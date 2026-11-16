@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 import { getCachedPointById } from "../db/offlineContentService";
+import { isOnlineNow } from "../db/networkService";
 import { auth } from "../services/firebaseConfig";
 import { resolvePointContent } from "../services/contentResolver";
 import { getPoints } from "../services/destinationService";
@@ -174,21 +175,30 @@ export default function Story() {
       try {
         setLoading(true);
         let found = null, resolvedContent = null, pointsList = [];
-        try {
-          pointsList     = await getPoints(destinationId);
-          found          = pointsList.find((p) => p.id === pointId);
-          resolvedContent = await resolvePointContent(destinationId, pointId);
-        } catch {
-          const cached = await getCachedPointById(pointId);
-          if (cached) {
-            found = cached;
-            resolvedContent = {
-              storyText: cached.storyText || "No story available offline.",
-              imageUrl:  cached.imageLocalPaths?.[0] || null,
-              videoUrl:  cached.videoLocalPath || null,
-            };
+
+        const online = await isOnlineNow();
+        const cached = await getCachedPointById(pointId);
+
+        if (cached) {
+          found = cached;
+          resolvedContent = {
+            storyText: cached.storyText ?? "",
+            images: cached.imageLocalPaths || [],
+            imageUrl: cached.imageLocalPaths?.[0] || null,
+            videoUrl: cached.videoLocalPath || null,
+          };
+        }
+
+        if (!found && online) {
+          try {
+            pointsList = await getPoints(destinationId);
+            found = pointsList.find((p) => p.id === pointId);
+            resolvedContent = await resolvePointContent(destinationId, pointId);
+          } catch (err) {
+            console.log("Online story fetch failed:", err?.message || err);
           }
         }
+
         setPoint(found);
         setContent(resolvedContent);
         setAllPoints(pointsList);
@@ -223,16 +233,18 @@ export default function Story() {
   if (error || !point || !content) return <ErrorScreen message={error} onBack={() => router.back()} />;
 
   // Split story into paragraphs for journal feel
-  const paragraphs = (content.storyText || "").split(/\n+/).filter(Boolean);
+  const rawStory = (content.storyText || "").trim();
+  const paragraphs = (rawStory || "Story coming soon.").split(/\n+/).filter(Boolean);
   const firstChar  = paragraphs[0]?.[0] ?? "";
   const firstRest  = paragraphs[0]?.slice(1) ?? "";
 
   const isValidPhoto = (url) => typeof url === "string" && (url.startsWith("http") || url.startsWith("file://"));
+  const hasLocalPhotos = Array.isArray(point?.imageLocalPaths) && point.imageLocalPaths.length > 0;
   const photoUri =
+    (Array.isArray(point?.imageLocalPaths) && isValidPhoto(point.imageLocalPaths[0]) && point.imageLocalPaths[0]) ||
     (isValidPhoto(content?.imageUrl) && content.imageUrl) ||
     (Array.isArray(content?.images) && isValidPhoto(content.images[0]) && content.images[0]) ||
     (isValidPhoto(point?.imageUrl) && point.imageUrl) ||
-    (Array.isArray(point?.imageLocalPaths) && isValidPhoto(point.imageLocalPaths[0]) && point.imageLocalPaths[0]) ||
     getPointPhoto(point?.id || pointId, point?.name, destinationId);
 
   return (
@@ -315,7 +327,7 @@ export default function Story() {
           ))}
 
           {/* media — full bleed with caption strip */}
-          {photoUri && !content.videoUrl && (
+          {((hasLocalPhotos && photoUri) || (Array.isArray(content?.images) && content.images.length > 0)) && !content.videoUrl && (
             <View style={[s.mediaCard, { backgroundColor: cardBg, borderColor: paperLine }]}>
               <Image source={{ uri: photoUri }} style={s.mediaImg} resizeMode="cover" />
               <View style={s.captionStrip}>
@@ -325,7 +337,7 @@ export default function Story() {
             </View>
           )}
 
-          {content.videoUrl && (
+          {!!content.videoUrl && (
             <View style={[s.mediaCard, { backgroundColor: cardBg, borderColor: paperLine }]}>
               <View style={s.videoBox}>
                 <VideoView
