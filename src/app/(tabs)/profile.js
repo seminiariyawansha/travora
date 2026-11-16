@@ -27,7 +27,7 @@ const MENU_ITEMS = [
   { icon: "color-palette-outline",  label: "Appearance",              route: "/appearance" },
   { icon: "navigate-outline",       label: "Location permissions",    route: "/location-permissions" },
   { icon: "cloud-download-outline", label: "Downloaded destinations", route: "/downloaded-destinations" },
-  { icon: "notifications-outline",  label: "Notifications",           route: null },
+  { icon: "notifications-outline",  label: "Notifications",           route: "/notifications" },
 ];
 
 export default function Profile() {
