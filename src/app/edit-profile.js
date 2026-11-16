@@ -30,6 +30,7 @@ import {
   uploadAvatar,
 } from "../services/authService";
 import { colors } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
 import { useResponsive } from "../theme/responsive";
 
 export default function EditProfile() {
@@ -37,6 +38,7 @@ export default function EditProfile() {
   const insets = useSafeAreaInsets();
   const { moderateScale } = useResponsive();
   const { user, profile, refreshProfile } = useAuth();
+  const { colors: themeColors, isDark } = useTheme();
 
   const [avatarUri, setAvatarUri] = useState(
     profile?.photoURL || user?.photoURL || null,
@@ -172,12 +174,12 @@ export default function EditProfile() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <View style={styles.header}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.bgSecondary }]} edges={["top", "left", "right"]}>
+      <View style={[styles.header, { backgroundColor: themeColors.bgSecondary }]}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
-          <Ionicons name="chevron-back" size={22} color={colors.ink} />
+          <Ionicons name="chevron-back" size={22} color={themeColors.textPrimary} />
         </Pressable>
-        <Text style={[styles.headerTitle, { fontSize: moderateScale(16) }]}>
+        <Text style={[styles.headerTitle, { fontSize: moderateScale(16), color: themeColors.textPrimary }]}>
           Edit Profile
         </Text>
         <View style={{ width: 22 }} />
@@ -204,17 +206,17 @@ export default function EditProfile() {
                 <Ionicons
                   name="checkmark-circle"
                   size={16}
-                  color={colors.teal}
+                  color={themeColors.teal}
                 />
                 <Text style={styles.success}>{success}</Text>
               </View>
             ) : null}
 
             {/* Avatar */}
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder }]}>
               <View style={{ alignItems: "center" }}>
                 <Text
-                  style={[styles.sectionTitle, { fontSize: moderateScale(14) }]}
+                  style={[styles.sectionTitle, { fontSize: moderateScale(14), color: themeColors.textPrimary }]}
                 >
                   Profile Details
                 </Text>
@@ -234,27 +236,27 @@ export default function EditProfile() {
                     )}
                   </View>
                 </Pressable>
-                <Text style={styles.avatarHint}>Tap to change photo</Text>
+                <Text style={[styles.avatarHint, { color: themeColors.textSecondary }]}>Tap to change photo</Text>
               </View>
 
-              <Text style={styles.label}>Full name</Text>
+              <Text style={[styles.label, { color: themeColors.textSecondary }]}>Full name</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.cardBorder, color: themeColors.textPrimary }]}
                 value={name}
                 onChangeText={setName}
                 placeholder="Your name"
-                placeholderTextColor={colors.gray}
+                placeholderTextColor={themeColors.textSecondary}
               />
 
-              <Text style={styles.label}>Email</Text>
+              <Text style={[styles.label, { color: themeColors.textSecondary }]}>Email</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.cardBorder, color: themeColors.textPrimary }]}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 placeholder="Your email"
-                placeholderTextColor={colors.gray}
+                placeholderTextColor={themeColors.textSecondary}
               />
 
               {email !== user?.email && (
@@ -283,41 +285,41 @@ export default function EditProfile() {
             </View>
 
             {/* Password */}
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder }]}>
               <Text
-                style={[styles.sectionTitle, { fontSize: moderateScale(14) }]}
+                style={[styles.sectionTitle, { fontSize: moderateScale(14), color: themeColors.textPrimary }]}
               >
                 Change Password
               </Text>
 
-              <Text style={styles.label}>Current password</Text>
+              <Text style={[styles.label, { color: themeColors.textSecondary }]}>Current password</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.cardBorder, color: themeColors.textPrimary }]}
                 value={currentPassword}
                 onChangeText={setCurrentPassword}
                 secureTextEntry
                 placeholder="Current password"
-                placeholderTextColor={colors.gray}
+                placeholderTextColor={themeColors.textSecondary}
               />
 
-              <Text style={styles.label}>New password</Text>
+              <Text style={[styles.label, { color: themeColors.textSecondary }]}>New password</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.cardBorder, color: themeColors.textPrimary }]}
                 value={newPassword}
                 onChangeText={setNewPassword}
                 secureTextEntry
                 placeholder="New password"
-                placeholderTextColor={colors.gray}
+                placeholderTextColor={themeColors.textSecondary}
               />
 
-              <Text style={styles.label}>Confirm new password</Text>
+              <Text style={[styles.label, { color: themeColors.textSecondary }]}>Confirm new password</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.cardBorder, color: themeColors.textPrimary }]}
                 value={confirmNewPassword}
                 onChangeText={setConfirmNewPassword}
                 secureTextEntry
                 placeholder="Confirm new password"
-                placeholderTextColor={colors.gray}
+                placeholderTextColor={themeColors.textSecondary}
               />
 
               <View style={{ marginTop: 14 }}>

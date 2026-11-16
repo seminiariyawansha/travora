@@ -17,10 +17,12 @@ import { auth } from "../services/firebaseConfig";
 import { getDestination, getPoints } from "../services/destinationService";
 import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
 
 export default function Progress() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { colors: themeColors, isDark } = useTheme();
   const destinationId = params.destinationId || "sigiriya";
 
   const [points, setPoints] = useState([]);
@@ -95,38 +97,38 @@ export default function Progress() {
     points.length > 0 ? Math.round((unlockedCount / points.length) * 100) : 0;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.bg }]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={20} color={colors.ink} />
+        <Pressable onPress={() => router.back()} hitSlop={10}>
+          <Ionicons name="chevron-back" size={20} color={themeColors.textPrimary} />
         </Pressable>
-        <Text style={styles.title}>{destName}</Text>
+        <Text style={[styles.title, { color: themeColors.textPrimary }]}>{destName}</Text>
         <View style={{ width: 20 }} />
       </View>
 
       {loading ? (
-        <ActivityIndicator color={colors.teal} style={{ marginTop: 40 }} />
+        <ActivityIndicator color={themeColors.teal} style={{ marginTop: 40 }} />
       ) : (
         <>
           <View style={{ paddingHorizontal: 20 }}>
-            <Text style={styles.progressLabel}>
+            <Text style={[styles.progressLabel, { color: themeColors.textSecondary }]}>
               {unlockedCount}/{points.length} points unlocked · {totalPoints} pts earned
             </Text>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${percent}%` }]} />
+            <View style={[styles.progressTrack, { backgroundColor: themeColors.divider }]}>
+              <View style={[styles.progressFill, { width: `${percent}%`, backgroundColor: themeColors.teal }]} />
             </View>
           </View>
 
           <ScrollView contentContainerStyle={{ padding: 20, gap: 10 }}>
             {points.length === 0 && (
-              <Text style={{ color: colors.gray, textAlign: "center", marginTop: 20 }}>
+              <Text style={{ color: themeColors.textSecondary, textAlign: "center", marginTop: 20 }}>
                 No points found. Download Sigiriya first.
               </Text>
             )}
             {points.map((point) => (
-              <View key={point.id} style={styles.row}>
+              <View key={point.id} style={[styles.row, { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder }]}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.pointName}>{point.name}</Text>
+                  <Text style={[styles.pointName, { color: themeColors.textPrimary }]}>{point.name}</Text>
                   <Tag
                     label={
                       point.unlocked
@@ -144,7 +146,7 @@ export default function Progress() {
                     }
                   />
                 </View>
-                <Text style={styles.pts}>+{point.pointsValue ?? 0} pts</Text>
+                <Text style={[styles.pts, { color: themeColors.teal }]}>+{point.pointsValue ?? 0} pts</Text>
               </View>
             ))}
           </ScrollView>

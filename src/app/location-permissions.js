@@ -15,8 +15,9 @@ import {
 } from "react-native";
 import * as Location from "expo-location";
 import { colors } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
 
-function PermRow({ icon, title, subtitle, status, onPress }) {
+function PermRow({ icon, title, subtitle, status, onPress, textPrimary, textSecondary }) {
   const color =
     status === "granted" ? "#10534a" : status === "denied" ? "#C0392B" : "#7A6F65";
   const label =
@@ -31,8 +32,8 @@ function PermRow({ icon, title, subtitle, status, onPress }) {
         <Ionicons name={icon} size={22} color={color} />
       </View>
       <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSub}>{subtitle}</Text>
+        <Text style={[styles.rowTitle, textPrimary && { color: textPrimary }]}>{title}</Text>
+        <Text style={[styles.rowSub, textSecondary && { color: textSecondary }]}>{subtitle}</Text>
       </View>
       <View style={[styles.badge, { backgroundColor: color + "22" }]}>
         <Text style={[styles.badgeTxt, { color }]}>{label}</Text>
@@ -43,6 +44,7 @@ function PermRow({ icon, title, subtitle, status, onPress }) {
 
 export default function LocationPermissions() {
   const router = useRouter();
+  const { colors: themeColors, isDark } = useTheme();
   const [fgStatus, setFgStatus] = useState("undetermined");
   const [bgStatus, setBgStatus] = useState("undetermined");
 
@@ -72,9 +74,9 @@ export default function LocationPermissions() {
   const openSettings = () => Linking.openSettings();
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.bgSecondary }]}>
       {/* header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: themeColors.headerBg }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
           <Ionicons name="chevron-back" size={20} color={colors.white} />
         </Pressable>
@@ -84,50 +86,54 @@ export default function LocationPermissions() {
 
       <ScrollView contentContainerStyle={styles.body}>
         {/* info banner */}
-        <View style={styles.banner}>
+        <View style={[styles.banner, { backgroundColor: isDark ? "#172A3A" : "#E8F4FD" }]}>
           <Ionicons name="information-circle-outline" size={18} color="#0A6EBD" />
-          <Text style={styles.bannerTxt}>
+          <Text style={[styles.bannerTxt, { color: isDark ? "#A0CBE8" : "#1A3D5C" }]}>
             Travora uses your location to unlock nearby points of interest and show
             you relevant destinations on the map.
           </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Permissions</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: themeColors.textSecondary }]}>PERMISSIONS</Text>
+        <View style={[styles.card, { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder }]}>
           <PermRow
             icon="navigate-outline"
             title="While Using the App"
             subtitle="Required to unlock nearby points on the map"
             status={fgStatus}
             onPress={fgStatus === "denied" ? openSettings : requestFg}
+            textPrimary={themeColors.textPrimary}
+            textSecondary={themeColors.textSecondary}
           />
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: themeColors.divider }]} />
           <PermRow
             icon="location-outline"
             title="Always (Background)"
             subtitle="Allows geofence alerts even when app is closed"
             status={bgStatus}
             onPress={bgStatus === "denied" ? openSettings : requestBg}
+            textPrimary={themeColors.textPrimary}
+            textSecondary={themeColors.textSecondary}
           />
         </View>
 
-        <Text style={styles.sectionTitle}>How it's used</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: themeColors.textSecondary }]}>HOW IT'S USED</Text>
+        <View style={[styles.card, { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder }]}>
           {[
             { icon: "map-outline",       text: "Show your position on the destination map" },
             { icon: "lock-open-outline", text: "Auto-unlock points when you arrive on site" },
             { icon: "notifications-outline", text: "Alert you when you're near an unvisited point" },
           ].map((item) => (
             <View key={item.text} style={styles.usageRow}>
-              <Ionicons name={item.icon} size={16} color={colors.teal} />
-              <Text style={styles.usageTxt}>{item.text}</Text>
+              <Ionicons name={item.icon} size={16} color={themeColors.teal} />
+              <Text style={[styles.usageTxt, { color: themeColors.textPrimary }]}>{item.text}</Text>
             </View>
           ))}
         </View>
 
-        <Pressable style={styles.openBtn} onPress={openSettings}>
-          <Text style={styles.openBtnTxt}>Open Device Settings</Text>
-          <Ionicons name="open-outline" size={15} color={colors.teal} />
+        <Pressable style={[styles.openBtn, { borderColor: themeColors.teal }]} onPress={openSettings}>
+          <Text style={[styles.openBtnTxt, { color: themeColors.teal }]}>Open Device Settings</Text>
+          <Ionicons name="open-outline" size={15} color={themeColors.teal} />
         </Pressable>
       </ScrollView>
     </SafeAreaView>

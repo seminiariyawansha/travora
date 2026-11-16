@@ -14,8 +14,9 @@ import {
 } from "react-native";
 import { getAllCachedDestinations, deleteCachedDestination, getCacheSize } from "../db/offlineContentService";
 import { colors } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
 
-function DestCard({ dest, onDelete }) {
+function DestCard({ dest, onDelete, textPrimary, textSecondary }) {
   const [deleting, setDeleting] = useState(false);
 
   const handleDelete = () => {
@@ -46,10 +47,10 @@ function DestCard({ dest, onDelete }) {
         <Ionicons name="map-outline" size={24} color={colors.teal} />
       </View>
       <View style={dc.info}>
-        <Text style={dc.name}>{dest.name}</Text>
+        <Text style={[dc.name, textPrimary && { color: textPrimary }]}>{dest.name}</Text>
         <View style={dc.meta}>
           <Ionicons name="folder-outline" size={11} color="#999" />
-          <Text style={dc.metaTxt}>{sizeMB} MB  ·  {dest.pointCount ?? "?"} points</Text>
+          <Text style={[dc.metaTxt, textSecondary && { color: textSecondary }]}>{sizeMB} MB  ·  {dest.pointCount ?? "?"} points</Text>
         </View>
         {dest.downloadedAt && (
           <Text style={dc.date}>
@@ -86,6 +87,7 @@ const dc = StyleSheet.create({
 
 export default function DownloadedDestinations() {
   const router = useRouter();
+  const { colors: themeColors, isDark } = useTheme();
   const [destinations, setDestinations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totalMB, setTotalMB] = useState(0);
@@ -128,9 +130,9 @@ export default function DownloadedDestinations() {
   };
 
   return (
-    <SafeAreaView style={s.container}>
+    <SafeAreaView style={[s.container, { backgroundColor: themeColors.bgSecondary }]}>
       {/* header */}
-      <View style={s.header}>
+      <View style={[s.header, { backgroundColor: themeColors.headerBg }]}>
         <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={10}>
           <Ionicons name="chevron-back" size={20} color={colors.white} />
         </Pressable>
@@ -141,39 +143,44 @@ export default function DownloadedDestinations() {
       </View>
 
       {/* storage pill */}
-      <View style={s.storagePill}>
-        <Ionicons name="server-outline" size={14} color={colors.teal} />
-        <Text style={s.storageTxt}>
+      <View style={[s.storagePill, { backgroundColor: themeColors.teal + "20" }]}>
+        <Ionicons name="server-outline" size={14} color={themeColors.teal} />
+        <Text style={[s.storageTxt, { color: themeColors.teal }]}>
           {totalMB} MB used offline  ·  {destinations.length} destination{destinations.length !== 1 ? "s" : ""}
         </Text>
       </View>
 
       {loading ? (
         <View style={s.center}>
-          <ActivityIndicator color={colors.teal} />
+          <ActivityIndicator color={themeColors.teal} />
         </View>
       ) : destinations.length === 0 ? (
         <View style={s.empty}>
-          <Ionicons name="cloud-download-outline" size={52} color="#D0D0D0" />
-          <Text style={s.emptyTitle}>No downloads yet</Text>
-          <Text style={s.emptySub}>
+          <Ionicons name="cloud-download-outline" size={52} color={themeColors.cardBorder} />
+          <Text style={[s.emptyTitle, { color: themeColors.textPrimary }]}>No downloads yet</Text>
+          <Text style={[s.emptySub, { color: themeColors.textSecondary }]}>
             Open a destination and tap "Download for Offline" to save it here.
           </Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={s.list}>
-          <View style={s.card}>
+          <View style={[s.card, { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder }]}>
             {destinations.map((dest, i) => (
               <View key={dest.id}>
-                <DestCard dest={dest} onDelete={handleDelete} />
-                {i < destinations.length - 1 && <View style={s.divider} />}
+                <DestCard
+                  dest={dest}
+                  onDelete={handleDelete}
+                  textPrimary={themeColors.textPrimary}
+                  textSecondary={themeColors.textSecondary}
+                />
+                {i < destinations.length - 1 && <View style={[s.divider, { backgroundColor: themeColors.divider }]} />}
               </View>
             ))}
           </View>
 
-          <View style={s.infoBanner}>
-            <Ionicons name="wifi-outline" size={16} color="#7A7A7A" />
-            <Text style={s.infoTxt}>
+          <View style={[s.infoBanner, { backgroundColor: isDark ? "#1E1E1E" : "#F0F0F0" }]}>
+            <Ionicons name="wifi-outline" size={16} color={themeColors.textSecondary} />
+            <Text style={[s.infoTxt, { color: themeColors.textSecondary }]}>
               Downloaded content is available without an internet connection.
             </Text>
           </View>

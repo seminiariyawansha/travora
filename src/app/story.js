@@ -20,6 +20,7 @@ import { resolvePointContent } from "../services/contentResolver";
 import { getPoints } from "../services/destinationService";
 import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
 
 // ─── tiny helpers ────────────────────────────────────────────────────────────
 const TEAL       = "#10534a";
@@ -149,6 +150,12 @@ const err = StyleSheet.create({
 export default function Story() {
   const router = useRouter();
   const { pointId, destinationId } = useLocalSearchParams();
+  const { isDark } = useTheme();
+
+  const paperBg   = isDark ? "#141716" : CREAM;
+  const paperInk  = isDark ? "#EDE8E0" : INK;
+  const paperLine = isDark ? "#28302D" : PAPER_LINE;
+  const cardBg    = isDark ? "#1C211F" : "#fff";
 
   const [point,     setPoint]     = useState(null);
   const [content,   setContent]   = useState(null);
@@ -220,7 +227,7 @@ export default function Story() {
   const firstRest  = paragraphs[0]?.slice(1) ?? "";
 
   return (
-    <View style={s.root}>
+    <View style={[s.root, { backgroundColor: paperBg }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {/* ── FULL-BLEED PARALLAX HEADER IMAGE ── */}
@@ -263,31 +270,31 @@ export default function Story() {
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
       >
         {/* torn paper top edge */}
-        <View style={s.tornEdge}>
+        <View style={[s.tornEdge, { backgroundColor: paperBg }]}>
           {Array.from({ length: 18 }).map((_, i) => (
             <View
               key={i}
               style={[
                 s.tornTooth,
-                { height: 8 + (i % 3) * 4, marginTop: i % 2 === 0 ? -4 : 0 },
+                { height: 8 + (i % 3) * 4, marginTop: i % 2 === 0 ? -4 : 0, backgroundColor: paperBg },
               ]}
             />
           ))}
         </View>
 
-        <View style={s.paperBody}>
+        <View style={[s.paperBody, { backgroundColor: paperBg }]}>
           {/* chapter marker */}
           <View style={s.chapterRow}>
-            <View style={s.chapterLine} />
+            <View style={[s.chapterLine, { backgroundColor: paperLine }]} />
             <Text style={s.chapterLabel}>CHAPTER I</Text>
-            <View style={s.chapterLine} />
+            <View style={[s.chapterLine, { backgroundColor: paperLine }]} />
           </View>
 
           {/* first paragraph with drop-cap */}
           {paragraphs.length > 0 && (
             <View style={s.firstParaWrap}>
               <DropCap char={firstChar} />
-              <Text style={s.bodyText}>{firstRest}</Text>
+              <Text style={[s.bodyText, { color: paperInk }]}>{firstRest}</Text>
             </View>
           )}
 
@@ -295,12 +302,12 @@ export default function Story() {
 
           {/* remaining paragraphs */}
           {paragraphs.slice(1).map((para, i) => (
-            <Text key={i} style={[s.bodyText, { marginBottom: 14 }]}>{para}</Text>
+            <Text key={i} style={[s.bodyText, { marginBottom: 14, color: paperInk }]}>{para}</Text>
           ))}
 
           {/* media — full bleed with caption strip */}
           {content.imageUrl && !content.videoUrl && (
-            <View style={s.mediaCard}>
+            <View style={[s.mediaCard, { backgroundColor: cardBg, borderColor: paperLine }]}>
               <Image source={{ uri: content.imageUrl }} style={s.mediaImg} resizeMode="cover" />
               <View style={s.captionStrip}>
                 <Ionicons name="camera-outline" size={11} color={GOLD} />
@@ -310,7 +317,7 @@ export default function Story() {
           )}
 
           {content.videoUrl && (
-            <View style={s.mediaCard}>
+            <View style={[s.mediaCard, { backgroundColor: cardBg, borderColor: paperLine }]}>
               <View style={s.videoBox}>
                 <VideoView
                   style={{ width: "100%", height: "100%" }}
@@ -334,12 +341,12 @@ export default function Story() {
             style={({ pressed }) => [s.ctaBtn, pressed && { opacity: 0.82, transform: [{ scale: 0.97 }] }]}
           >
             <Text style={s.ctaTxt}>Continue Exploring</Text>
-            <Ionicons name="arrow-forward" size={16} color={CREAM} style={{ marginLeft: 8 }} />
+            <Ionicons name="arrow-forward" size={16} color={isDark ? "#fff" : CREAM} style={{ marginLeft: 8 }} />
           </Pressable>
 
           {/* footer stamp */}
           <View style={s.footerStamp}>
-            <Text style={s.footerTxt}>TRAVORA  ·  FIELD JOURNAL</Text>
+            <Text style={[s.footerTxt, { color: paperLine }]}>TRAVORA  ·  FIELD JOURNAL</Text>
           </View>
         </View>
       </Animated.ScrollView>

@@ -21,6 +21,7 @@ import { getDestination, getPoints } from "../services/destinationService";
 import { auth } from "../services/firebaseConfig";
 import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
 import { useResponsive } from "../theme/responsive";
 import { getWeatherForDestination } from "../weather/weatherFetchService";
 import {
@@ -34,6 +35,7 @@ export default function Destination() {
   const insets = useSafeAreaInsets();
   const { moderateScale, height } = useResponsive();
   const { destinationId } = useLocalSearchParams();
+  const { colors: themeColors, isDark } = useTheme();
 
   const [destination, setDestination] = useState(null);
   const [points, setPoints] = useState([]);
@@ -182,7 +184,7 @@ export default function Destination() {
   const bannerReason = getBannerWeatherReason(weatherInfo);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: themeColors.bg }]}>
       {/* Hero spans the full width, even on tablets */}
       <View
         style={[
@@ -254,12 +256,21 @@ export default function Destination() {
                   params: { pointId: point.id, destinationId },
                 })
               }
-              style={styles.pointCard}
+              style={[
+                styles.pointCard,
+                {
+                  backgroundColor: themeColors.surface,
+                  borderColor: themeColors.cardBorder,
+                },
+              ]}
             >
               <View style={{ flex: 1, gap: 4 }}>
                 <View style={styles.pointTitleRow}>
                   <Text
-                    style={[styles.pointName, { fontSize: moderateScale(14) }]}
+                    style={[
+                      styles.pointName,
+                      { fontSize: moderateScale(14), color: themeColors.textPrimary },
+                    ]}
                   >
                     {point.name}
                   </Text>
@@ -268,7 +279,10 @@ export default function Destination() {
                   )}
                 </View>
                 <Text
-                  style={[styles.pointMeta, { fontSize: moderateScale(11.5) }]}
+                  style={[
+                    styles.pointMeta,
+                    { fontSize: moderateScale(11.5), color: themeColors.textSecondary },
+                  ]}
                 >
                   {point.indoorFriendly ? "Indoor" : "Outdoor"} ·{" "}
                   {point.pointsValue ?? 0} pts
@@ -277,14 +291,14 @@ export default function Destination() {
               <Ionicons
                 name={point.unlocked ? "checkmark-circle" : "lock-closed"}
                 size={moderateScale(20)}
-                color={point.unlocked ? colors.teal : colors.gray}
+                color={point.unlocked ? themeColors.teal : themeColors.gray}
               />
             </Pressable>
           ))}
         </ScrollView>
 
         {/* Pinned bottom action, clear of the system navigation bar */}
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16, backgroundColor: themeColors.bg }]}>
           {downloadMessage ? (
             <Text style={styles.downloadMessage}>{downloadMessage}</Text>
           ) : null}

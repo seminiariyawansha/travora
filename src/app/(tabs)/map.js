@@ -17,10 +17,12 @@ import { auth } from "../../services/firebaseConfig";
 import { unlockNearbyPoints } from "../../services/unlockService";
 import { isWithinRadius } from "../../utils/locationUtils";
 import { colors } from "../../theme/colors";
+import { useTheme } from "../../context/ThemeContext";
 import { getCachedPoints } from "../../db/offlineContentService";
 
 export default function MapScreen() {
 const router = useRouter();
+const { colors: themeColors, isDark } = useTheme();
 
 const [points, setPoints] = useState([]);
 
@@ -156,7 +158,7 @@ return () => {
 ]);
 
 return (
-<SafeAreaView style={styles.container}>
+<SafeAreaView style={[styles.container, { backgroundColor: themeColors.bg }]}>
 <MapView
 style={{ height: 320 }}
 initialRegion={{
@@ -215,12 +217,12 @@ longitudeDelta: 0.01,
       <Text style={styles.errorText}>GPS Notice: {locationError}</Text>
     )}
 
-    <Text style={styles.sectionTitle}>
+    <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>
       Points near you ({nearbyPoints.length})
     </Text>
 
     {nearbyPoints.length === 0 ? (
-      <Text style={styles.emptyText}>
+      <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
         No points nearby. Select another simulated location.
       </Text>
     ) : (
@@ -233,10 +235,10 @@ longitudeDelta: 0.01,
               params: { pointId: point.id, destinationId },
             })
           }
-          style={styles.pointRow}
+          style={[styles.pointRow, { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder }]}
         >
           <View style={{ flex: 1 }}>
-            <Text style={styles.pointName}>{point.name}</Text>
+            <Text style={[styles.pointName, { color: themeColors.textPrimary }]}>{point.name}</Text>
 
             <Tag
               label={point.unlocked ? "Unlocked" : point.indoorFriendly ? "Indoor" : "Outdoor"}
