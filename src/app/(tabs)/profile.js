@@ -20,9 +20,9 @@ import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
 
 const MENU_ITEMS = [
-  { icon: "navigate-outline", label: "Location permissions" },
-  { icon: "cloud-download-outline", label: "Downloaded destinations" },
-  { icon: "notifications-outline", label: "Notifications" },
+  { icon: "navigate-outline",       label: "Location permissions",    route: "/location-permissions" },
+  { icon: "cloud-download-outline", label: "Downloaded destinations", route: "/downloaded-destinations" },
+  { icon: "notifications-outline",  label: "Notifications",           route: null },
 ];
 
 export default function Profile() {
@@ -213,12 +213,16 @@ export default function Profile() {
             </Text>
             <View style={styles.menuCard}>
               {MENU_ITEMS.map((item, i) => (
-                <View
+                <Pressable
                   key={item.label}
-                  style={[
+                  style={({ pressed }) => [
                     styles.menuRow,
                     i < MENU_ITEMS.length - 1 && styles.menuDivider,
+                    pressed && { opacity: 0.65 },
                   ]}
+                  onPress={() => {
+                    if (item.route) router.push(item.route);
+                  }}
                 >
                   <Ionicons
                     name={item.icon}
@@ -238,7 +242,7 @@ export default function Profile() {
                     size={moderateScale(15)}
                     color={colors.gray}
                   />
-                </View>
+                </Pressable>
               ))}
               <Pressable style={styles.menuRow} onPress={handleLogout}>
                 <Ionicons
