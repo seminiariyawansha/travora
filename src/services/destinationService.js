@@ -6,49 +6,21 @@ import {
   getDocs,
   getFirestore,
 } from "firebase/firestore";
+import { normalizePoint } from "../utils/pointType";
 import { app } from "./firebaseConfig";
 
 const db = getFirestore(app);
 
-function isValidImageUrl(url) {
-  if (!url || typeof url !== "string") return false;
-  const trimmed = url.trim().toLowerCase();
-  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false;
-  // Wikimedia Commons explicitly rejects mobile app requests with 403 Forbidden
-  if (trimmed.includes("wikimedia.org") || trimmed.includes("wikipedia.org")) return false;
-  if (trimmed.includes("placeholder")) return false;
-  return true;
-}
-
-function formatDestination(id, data = {}) {
-  const lat = data.latitude != null ? data.latitude : data.lat;
-  const lon = data.longitude != null ? data.longitude : (data.lon != null ? data.lon : data.lng);
-  const rawImg =
-    data.imageUrl ||
-    data.image ||
-    data.photoUrl ||
-    data.photo ||
-    (Array.isArray(data.images) && data.images[0] ? data.images[0] : null);
-
-  const img = isValidImageUrl(rawImg) ? rawImg : null;
-
-  return {
-    id,
-    ...data,
-    latitude: lat != null ? Number(lat) : null,
-    longitude: lon != null ? Number(lon) : null,
-    imageUrl: img,
-  };
-}
-
 // Get all destinations (Home screen)
 export const getDestinations = async () => {
   const snapshot = await getDocs(collection(db, "destinations"));
-  return snapshot.docs.map((docSnap) => formatDestination(docSnap.id, docSnap.data()));
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  }));
 };
 
-// Keep both names working, since different screens were written
-// expecting different names — avoids having to hunt down every usage.
+// Keep both names working, since different screens expect different names
 export const getAllDestinations = getDestinations;
 
 // Get one destination's details
@@ -56,18 +28,33 @@ export const getDestination = async (destinationId) => {
   const docRef = doc(db, "destinations", destinationId);
   const docSnap = await getDoc(docRef);
   if (!docSnap.exists()) return null;
-  return formatDestination(docSnap.id, docSnap.data());
+  return { id: docSnap.id, ...docSnap.data() };
 };
 
-// Get all points for a destination
+// Get all points for a destination.
+// Every point comes back with a clean true/false in indoorFriendly,
+// even if it was saved under another name or as text.
 export const getPoints = async (destinationId) => {
   const snapshot = await getDocs(
     collection(db, "destinations", destinationId, "points"),
   );
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...docSnap.data(),
-  }));
+
+  return snapshot.docs.map((docSnap) => {
+    const data = docSnap.data();
+    const point = normalizePoint({ id: docSnap.id, ...data });
+
+    // TEMPORARY: shows how each point was saved. Delete this line once it works.
+    console.log(
+      "POINT:",
+      data.name,
+      "-> indoor:",
+      point.indoorFriendly,
+      "| raw:",
+      JSON.stringify(data),
+    );
+
+    return point;
+  });
 };
 
 // Get one point's full content (story, images, video)
