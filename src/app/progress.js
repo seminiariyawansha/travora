@@ -1,23 +1,82 @@
 // src/app/progress.js
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
-    Pressable,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import Tag from "../components/Tag";
-import { mockPoints } from "../data/mockData";
+import { getCachedPoints } from "../db/offlineContentService";
+import { auth } from "../services/firebaseConfig";
+import { getPoints } from "../services/destinationService";
+import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
 
 export default function Progress() {
   const router = useRouter();
-  const points = mockPoints.sigiriya;
+  const [points, setPoints] = useState([]);
+  const [destName, setDestName] = useState("Sigiriya");
+  const [loading, setLoading] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const destinationId = "sigiriya";
+
+      async function loadProgress() {
+        setLoading(true);
+        try {
+          // 1. Load points (Firebase first, SQLite fallback)
+          let rawPoints = [];
+          try {
+            rawPoints = await getPoints(destinationId);
+          } catch {
+            rawPoints = await getCachedPoints(destinationId);
+          }
+
+          // 2. Load which ones the user has actually unlocked
+          let unlockedIds = [];
+          try {
+            const uid = auth.currentUser?.uid ?? "guest";
+            const progress = await getUserProgress(uid, destinationId);
+            unlockedIds = progress?.unlockedPoints ?? [];
+          } catch {
+            // offline — show all as locked
+          }
+
+          if (!active) return;
+
+          setPoints(
+            rawPoints.map((p) => ({
+              ...p,
+              unlocked: unlockedIds.includes(p.id),
+            }))
+          );
+        } catch (e) {
+          console.error("Progress load error:", e);
+        } finally {
+          if (active) setLoading(false);
+        }
+      }
+
+      loadProgress();
+      return () => { active = false; };
+    }, [])
+  );
+
   const unlockedCount = points.filter((p) => p.unlocked).length;
-  const percent = Math.round((unlockedCount / points.length) * 100);
+  const totalPoints = points.reduce(
+    (sum, p) => sum + (p.unlocked ? p.pointsValue ?? 0 : 0),
+    0
+  );
+  const percent =
+    points.length > 0 ? Math.round((unlockedCount / points.length) * 100) : 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -25,45 +84,56 @@ export default function Progress() {
         <Pressable onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={20} color={colors.ink} />
         </Pressable>
-        <Text style={styles.title}>Sigiriya</Text>
+        <Text style={styles.title}>{destName}</Text>
         <View style={{ width: 20 }} />
       </View>
 
-      <View style={{ paddingHorizontal: 20 }}>
-        <Text style={styles.progressLabel}>
-          {unlockedCount}/{points.length} points unlocked
-        </Text>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${percent}%` }]} />
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 10 }}>
-        {points.map((point) => (
-          <View key={point.id} style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.pointName}>{point.name}</Text>
-              <Tag
-                label={
-                  point.unlocked
-                    ? "Unlocked"
-                    : point.indoorFriendly
-                      ? "Indoor"
-                      : "Outdoor"
-                }
-                variant={
-                  point.unlocked
-                    ? "unlocked"
-                    : point.suggested
-                      ? "suggested"
-                      : "neutral"
-                }
-              />
+      {loading ? (
+        <ActivityIndicator color={colors.teal} style={{ marginTop: 40 }} />
+      ) : (
+        <>
+          <View style={{ paddingHorizontal: 20 }}>
+            <Text style={styles.progressLabel}>
+              {unlockedCount}/{points.length} points unlocked · {totalPoints} pts earned
+            </Text>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${percent}%` }]} />
             </View>
-            <Text style={styles.pts}>+{point.pointsValue} pts</Text>
           </View>
-        ))}
-      </ScrollView>
+
+          <ScrollView contentContainerStyle={{ padding: 20, gap: 10 }}>
+            {points.length === 0 && (
+              <Text style={{ color: colors.gray, textAlign: "center", marginTop: 20 }}>
+                No points found. Download Sigiriya first.
+              </Text>
+            )}
+            {points.map((point) => (
+              <View key={point.id} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pointName}>{point.name}</Text>
+                  <Tag
+                    label={
+                      point.unlocked
+                        ? "Unlocked"
+                        : point.indoorFriendly
+                          ? "Indoor"
+                          : "Outdoor"
+                    }
+                    variant={
+                      point.unlocked
+                        ? "unlocked"
+                        : point.suggested
+                          ? "suggested"
+                          : "neutral"
+                    }
+                  />
+                </View>
+                <Text style={styles.pts}>+{point.pointsValue ?? 0} pts</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </>
+      )}
     </SafeAreaView>
   );
 }

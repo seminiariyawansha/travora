@@ -1,12 +1,28 @@
 // src/app/badge.js
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { Share } from "react-native";
 import { SafeAreaView, StyleSheet, Text, View } from "react-native";
 import Button from "../components/Button";
 import { colors } from "../theme/colors";
 
 export default function Badge() {
   const router = useRouter();
+  // Accept destinationName and totalPoints as optional nav params
+  const { destinationName, totalPoints } = useLocalSearchParams();
+
+  const name = destinationName ?? "Sigiriya";
+  const pts = totalPoints ? Number(totalPoints) : 0;
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `🏆 I just completed ${name} on Travora and earned ${pts} points! #Travora #SriLanka`,
+      });
+    } catch (e) {
+      // Share cancelled or failed — silently ignore
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -14,15 +30,15 @@ export default function Badge() {
         <Ionicons name="trophy" size={44} color={colors.terracotta} />
       </View>
       <Text style={styles.title}>Destination Completed!</Text>
-      <Text style={styles.destName}>Sigiriya</Text>
+      <Text style={styles.destName}>{name}</Text>
 
       <View style={styles.pointsRow}>
         <Ionicons name="star" size={18} color={colors.terracotta} />
-        <Text style={styles.pointsText}>40 Total Points Earned</Text>
+        <Text style={styles.pointsText}>{pts} Total Points Earned</Text>
       </View>
 
       <View style={{ width: "100%", gap: 10, marginTop: 40 }}>
-        <Button title="Share Badge" onPress={() => {}} />
+        <Button title="Share Badge" onPress={handleShare} />
         <Button
           title="View Details"
           variant="secondary"

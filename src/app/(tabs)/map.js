@@ -133,6 +133,7 @@ async function handleGeofenceUnlock() {
         params: {
           pointId: unlockedPoint.id,
           pointsEarned: unlockedPoint.pointsValue ?? 10,
+          destinationId,
         },
       });
     }
@@ -229,7 +230,7 @@ longitudeDelta: 0.01,
           onPress={() =>
             router.push({
               pathname: "/story",
-              params: { pointId: point.id },
+              params: { pointId: point.id, destinationId },
             })
           }
           style={styles.pointRow}
