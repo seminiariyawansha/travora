@@ -10,22 +10,34 @@ import { app } from "./firebaseConfig";
 
 const db = getFirestore(app);
 
+function isValidImageUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim().toLowerCase();
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false;
+  // Wikimedia Commons explicitly rejects mobile app requests with 403 Forbidden
+  if (trimmed.includes("wikimedia.org") || trimmed.includes("wikipedia.org")) return false;
+  if (trimmed.includes("placeholder")) return false;
+  return true;
+}
+
 function formatDestination(id, data = {}) {
   const lat = data.latitude != null ? data.latitude : data.lat;
   const lon = data.longitude != null ? data.longitude : (data.lon != null ? data.lon : data.lng);
-  const img =
+  const rawImg =
     data.imageUrl ||
     data.image ||
     data.photoUrl ||
     data.photo ||
     (Array.isArray(data.images) && data.images[0] ? data.images[0] : null);
 
+  const img = isValidImageUrl(rawImg) ? rawImg : null;
+
   return {
     id,
     ...data,
     latitude: lat != null ? Number(lat) : null,
     longitude: lon != null ? Number(lon) : null,
-    imageUrl: typeof img === "string" ? img : null,
+    imageUrl: img,
   };
 }
 

@@ -184,9 +184,16 @@ export default function Destination() {
   };
 
   const bannerReason = getBannerWeatherReason(weatherInfo);
+  const isValidPhoto = (url) =>
+    typeof url === "string" &&
+    (url.startsWith("http://") || url.startsWith("https://")) &&
+    !url.includes("wikimedia.org") &&
+    !url.includes("wikipedia.org") &&
+    !url.includes("placeholder");
+
   const heroPhotoUri =
-    destination?.imageUrl ||
-    destination?.photoUrl ||
+    (isValidPhoto(destination?.imageUrl) && destination.imageUrl) ||
+    (isValidPhoto(destination?.photoUrl) && destination.photoUrl) ||
     getDestinationPhoto(destinationId, destination?.name);
 
   return (

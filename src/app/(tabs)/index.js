@@ -223,7 +223,18 @@ export default function Home() {
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {filteredDestinations.map((dest) => {
-                  const photoUri = dest.imageUrl || dest.photoUrl || getDestinationPhoto(dest.id, dest.name);
+                  const isValidPhoto = (url) =>
+                    typeof url === "string" &&
+                    (url.startsWith("http://") || url.startsWith("https://")) &&
+                    !url.includes("wikimedia.org") &&
+                    !url.includes("wikipedia.org") &&
+                    !url.includes("placeholder");
+
+                  const photoUri =
+                    (isValidPhoto(dest.imageUrl) && dest.imageUrl) ||
+                    (isValidPhoto(dest.photoUrl) && dest.photoUrl) ||
+                    getDestinationPhoto(dest.id, dest.name);
+
                   return (
                     <Pressable
                       key={dest.id}
