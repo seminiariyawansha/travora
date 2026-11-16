@@ -44,16 +44,6 @@ export async function getDb() {
           temperature REAL,
           fetchedAt TEXT
         );
-
-        CREATE TABLE IF NOT EXISTS cached_destinations (
-          id TEXT PRIMARY KEY,
-          name TEXT,
-          description TEXT,
-          location TEXT,
-          latitude REAL,
-          longitude REAL,
-          imageUrl TEXT
-        );
       `);
       dbInstance = db;
       return db;
