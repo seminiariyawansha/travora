@@ -20,14 +20,20 @@ import { getCachedPoints } from "../../db/offlineContentService";
 import { getPendingSync } from "../../db/syncQueue";
 import { useLocation } from "../../hooks/useLocation";
 import { getPoints } from "../../services/destinationService";
+// NEW: namespace import so we can optionally call getDestinations()
+// without crashing if that function is not exported (yet).
+import { useTheme } from "../../context/ThemeContext";
+import * as destinationService from "../../services/destinationService";
 import { auth } from "../../services/firebaseConfig";
 import { getUserProgress } from "../../services/progressService";
 import { unlockNearbyPoints } from "../../services/unlockService";
 import { colors } from "../../theme/colors";
-import { useTheme } from "../../context/ThemeContext";
 import { useResponsive } from "../../theme/responsive";
 
 const SIGIRIYA_CENTER = { lat: 7.957, lng: 80.7603 };
+// NEW: used as the starting view when ALL places are shown
+// (the map then auto-fits to the loaded pins).
+const SRI_LANKA_CENTER = { lat: 7.8731, lng: 80.7718 };
 const VISITED_COLOR = "#8FA89F";
 const NEXT_COLOR = "#C8553D";
 
@@ -65,6 +71,13 @@ function normalizePoint(point) {
   };
 }
 
+// NEW: a point id may repeat in different destinations, so every point gets
+// a unique key = "<destinationId>:<pointId>". Used for React keys, map pins
+// and matching points after unlocks.
+function pointKey(point) {
+  return `${point.destinationId}:${point.id}`;
+}
+
 // Which point IDs has this tourist already visited? Saved progress from
 // Firestore, plus anything unlocked offline that is still waiting to sync.
 async function loadVisitedIds(userId, destinationId) {
@@ -96,10 +109,51 @@ async function loadVisitedIds(userId, destinationId) {
   return ids;
 }
 
+// NEW: list every destination id in the database.
+// Tries destinationService.getDestinations() first; if that function is
+// missing or fails, falls back to the destinations found in mockPoints.
+async function getDestinationIds() {
+  try {
+    const list = await destinationService.getDestinations?.();
+    const ids = (list ?? []).map((d) => d.id).filter(Boolean);
+    if (ids.length > 0) return ids;
+  } catch (error) {
+    console.log("Map: destinations unavailable:", error.message);
+  }
+  return Object.keys(mockPoints);
+}
+
+// NEW: load the points of ONE destination with the same 3-tier fallback
+// as before (SQLite -> Firestore -> mockPoints) so the map is never blank.
+async function loadPointsFor(destId) {
+  // 1. Try SQLite offline cache first
+  try {
+    const cached = await getCachedPoints(destId);
+    if (Array.isArray(cached) && cached.length > 0) return cached;
+  } catch (error) {
+    console.log("Map: local cache unavailable:", error.message);
+  }
+
+  // 2. If SQLite has no points, try online Firestore
+  try {
+    const online = await getPoints(destId);
+    if (Array.isArray(online) && online.length > 0) return online;
+  } catch (error) {
+    console.log("Map: online points fetch failed:", error.message);
+  }
+
+  // 3. Fallback to mock data
+  return mockPoints[destId] || [];
+}
+
 export default function MapScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const destinationId = params.destinationId || "sigiriya";
+
+  // CHANGED: no destinationId param = show EVERY place in the database.
+  // With a param (e.g. opened from a destination page) only that one shows.
+  const destinationId = params.destinationId || null;
+  const showAll = !destinationId;
 
   const { height } = useResponsive();
   const themeContext = useTheme();
@@ -120,51 +174,50 @@ export default function MapScreen() {
   const effectiveLocation = simulatedLocation || realLocation;
   const userId = auth?.currentUser?.uid;
 
-  // Load points with robust 3-tier fallback (SQLite -> Firestore -> mockPoints)
+  // Load points (one destination, or all of them).
   // Runs every time this tab is focused so progress is always current.
   useFocusEffect(
     useCallback(() => {
       let active = true;
 
       async function load() {
-        let rawPoints = [];
+        // Which destinations do we need?
+        const destIds = destinationId
+          ? [destinationId]
+          : await getDestinationIds();
 
-        // 1. Try SQLite offline cache first
-        try {
-          const cached = await getCachedPoints(destinationId);
-          if (Array.isArray(cached) && cached.length > 0) {
-            rawPoints = cached;
-          }
-        } catch (error) {
-          console.log("Map: local cache unavailable:", error.message);
-        }
+        // Load every destination in parallel (points + visited ids)
+        const perDestination = await Promise.all(
+          destIds.map(async (destId) => {
+            const [raw, visited] = await Promise.all([
+              loadPointsFor(destId),
+              loadVisitedIds(userId, destId),
+            ]);
 
-        // 2. If SQLite has no points, try online Firestore
-        if (rawPoints.length === 0) {
-          try {
-            const onlinePoints = await getPoints(destinationId);
-            if (Array.isArray(onlinePoints) && onlinePoints.length > 0) {
-              rawPoints = onlinePoints;
-            }
-          } catch (error) {
-            console.log("Map: online points fetch failed:", error.message);
-          }
-        }
+            return raw.map((p) => {
+              // Remember which destination each point belongs to
+              const point = normalizePoint({ ...p, destinationId: destId });
+              return {
+                ...point,
+                key: pointKey(point),
+                unlocked: point.unlocked || visited.has(point.id),
+              };
+            });
+          }),
+        );
 
-        // 3. Fallback to mock data so map is never blank
-        if (rawPoints.length === 0) {
-          rawPoints = mockPoints[destinationId] || mockPoints.sigiriya || [];
-        }
-
-        const visited = await loadVisitedIds(userId, destinationId);
         if (!active) return;
 
+        // Merge all destinations into one list
+        const merged = perDestination.flat();
+
+        // Keep anything already unlocked in this session
         setPoints((previous) =>
-          rawPoints.map(normalizePoint).map((point) => ({
+          merged.map((point) => ({
             ...point,
             unlocked:
-              visited.has(point.id) ||
-              previous.find((p) => p.id === point.id)?.unlocked === true,
+              point.unlocked ||
+              previous.find((p) => p.key === point.key)?.unlocked === true,
           })),
         );
       }
@@ -199,11 +252,12 @@ export default function MapScreen() {
       .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
 
     // Only call something "next" when we know where the user is
-    const nextId = effectiveLocation ? notVisited[0]?.id : null;
+    // (compared by the unique key, not the id)
+    const nextKey = effectiveLocation ? notVisited[0]?.key : null;
 
     const withStatus = withDistance.map((p) => ({
       ...p,
-      status: p.unlocked ? "visited" : p.id === nextId ? "next" : "todo",
+      status: p.unlocked ? "visited" : p.key === nextKey ? "next" : "todo",
     }));
 
     return {
@@ -225,19 +279,31 @@ export default function MapScreen() {
       const candidates = points.filter((p) => !p.unlocked);
       if (candidates.length === 0) return;
 
-      try {
-        const newlyUnlocked = await unlockNearbyPoints(
-          effectiveLocation,
-          candidates,
-          userId,
-          destinationId,
-        );
+      // CHANGED: unlockNearbyPoints works with one destination at a time,
+      // so group the candidates by destination first.
+      const groups = {};
+      candidates.forEach((p) => {
+        if (!groups[p.destinationId]) groups[p.destinationId] = [];
+        groups[p.destinationId].push(p);
+      });
 
-        if (isMounted && newlyUnlocked.length > 0) {
+      try {
+        for (const [destId, group] of Object.entries(groups)) {
+          const newlyUnlocked = await unlockNearbyPoints(
+            effectiveLocation,
+            group,
+            userId,
+            destId,
+          );
+
+          if (!isMounted || newlyUnlocked.length === 0) continue;
+
           console.log("Newly unlocked points:", newlyUnlocked);
 
+          // Mark them as unlocked (match on destination AND id)
           setPoints((currentPoints) =>
             currentPoints.map((point) =>
+              point.destinationId === destId &&
               newlyUnlocked.some((unlocked) => unlocked.id === point.id)
                 ? { ...point, unlocked: true }
                 : point,
@@ -250,9 +316,12 @@ export default function MapScreen() {
             params: {
               pointId: unlockedPoint.id,
               pointsEarned: unlockedPoint.pointsValue ?? 10,
-              destinationId,
+              destinationId: destId,
             },
           });
+
+          // Show one unlock screen at a time
+          break;
         }
       } catch (error) {
         console.error("Geofence check error on map screen:", error);
@@ -272,7 +341,9 @@ export default function MapScreen() {
     destinationId,
   ]);
 
-  // The simple shape the map needs for each pin
+  // The simple shape the map needs for each pin.
+  // CHANGED: id is the unique key so pins from different destinations
+  // never clash.
   const mapPoints = useMemo(
     () =>
       allPoints
@@ -280,7 +351,7 @@ export default function MapScreen() {
           (p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude),
         )
         .map((p) => ({
-          id: p.id,
+          id: p.key,
           name: p.name,
           lat: p.latitude,
           lng: p.longitude,
@@ -289,22 +360,37 @@ export default function MapScreen() {
     [allPoints],
   );
 
-  // Map center from points or default
+  // NEW: points for the search box (same data, unique id)
+  const searchPoints = useMemo(
+    () => allPoints.map((p) => ({ ...p, id: p.key })),
+    [allPoints],
+  );
+
+  // Map center: one destination -> its first point (or Sigiriya);
+  // all places -> centre of Sri Lanka (the map auto-fits to the pins).
   const mapCenter = useMemo(() => {
+    if (showAll) return SRI_LANKA_CENTER;
     const first = allPoints.find(
       (p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude),
     );
-    return first ? { lat: first.latitude, lng: first.longitude } : SIGIRIYA_CENTER;
-  }, [allPoints]);
+    return first
+      ? { lat: first.latitude, lng: first.longitude }
+      : SIGIRIYA_CENTER;
+  }, [allPoints, showAll]);
 
-  function openStory(pointId) {
-    router.push({ pathname: "/story", params: { pointId, destinationId } });
+  // CHANGED: takes the whole point so the correct destination is used
+  function openStory(point) {
+    router.push({
+      pathname: "/story",
+      params: { pointId: point.id, destinationId: point.destinationId },
+    });
   }
 
-  // Tapping a pin: visited points open their story, others show name
-  function handlePinPress(pointId) {
-    const point = allPoints.find((p) => p.id === pointId);
-    if (point?.unlocked) openStory(pointId);
+  // Tapping a pin: visited points open their story, others show name.
+  // CHANGED: the map now sends the unique key.
+  function handlePinPress(key) {
+    const point = allPoints.find((p) => p.key === key);
+    if (point?.unlocked) openStory(point);
   }
 
   function flyToPoint(point) {
@@ -359,7 +445,7 @@ export default function MapScreen() {
 
     return (
       <Pressable
-        key={point.id}
+        key={point.key} // CHANGED: unique across destinations
         onPress={onPress}
         style={[
           styles.pointRow,
@@ -367,7 +453,8 @@ export default function MapScreen() {
             backgroundColor: themeColors.surface,
             borderColor: themeColors.cardBorder,
           },
-          isVisited && (isDark ? { backgroundColor: "#1A2E28" } : styles.pointRowVisited),
+          isVisited &&
+            (isDark ? { backgroundColor: "#1A2E28" } : styles.pointRowVisited),
         ]}
       >
         <View style={[styles.rowDot, { backgroundColor: dot }]}>
@@ -386,7 +473,9 @@ export default function MapScreen() {
             {point.name}
           </Text>
           {formatDistance(point.distance) && (
-            <Text style={[styles.distance, { color: themeColors.textSecondary }]}>
+            <Text
+              style={[styles.distance, { color: themeColors.textSecondary }]}
+            >
               {formatDistance(point.distance)}
             </Text>
           )}
@@ -415,21 +504,24 @@ export default function MapScreen() {
           panelOpen ? { height: mapHeight } : { flex: 1 },
         ]}
       >
+        {/* CHANGED: zoomed out when showing all places, and the dashed route
+            line is hidden (it would join places across the whole country) */}
         <LeafletMap
           center={mapCenter}
-          zoom={16}
+          zoom={showAll ? 8 : 16}
           points={mapPoints}
           userLocation={effectiveLocation}
           followUser={follow}
           focus={focus}
           searchMarker={searchMarker}
           mapType={mapType}
+          showRoute={!showAll}
           onPointPress={handlePinPress}
           onUserMoved={() => setFollow(false)}
         />
 
         <MapSearch
-          points={allPoints}
+          points={searchPoints}
           onSelectPoint={flyToPoint}
           onSelectPlace={flyToPlace}
           onClear={() => setSearchMarker(null)}
@@ -447,23 +539,20 @@ export default function MapScreen() {
               style={[styles.legendDot, { backgroundColor: VISITED_COLOR }]}
             />
             <Text
-              style={[
-                styles.legendText,
-                { color: themeColors.textPrimary },
-              ]}
+              style={[styles.legendText, { color: themeColors.textPrimary }]}
             >
               Visited
             </Text>
           </View>
           <View style={styles.legendItem}>
             <View
-              style={[styles.legendDot, { backgroundColor: themeColors.terracotta }]}
+              style={[
+                styles.legendDot,
+                { backgroundColor: themeColors.terracotta },
+              ]}
             />
             <Text
-              style={[
-                styles.legendText,
-                { color: themeColors.textPrimary },
-              ]}
+              style={[styles.legendText, { color: themeColors.textPrimary }]}
             >
               To visit
             </Text>
@@ -472,11 +561,10 @@ export default function MapScreen() {
 
         {/* Map style toggle (Roads / Satellite) */}
         <Pressable
-          style={[
-            styles.layerButton,
-            { backgroundColor: themeColors.surface },
-          ]}
-          onPress={() => setMapType((m) => (m === "google" ? "satellite" : "google"))}
+          style={[styles.layerButton, { backgroundColor: themeColors.surface }]}
+          onPress={() =>
+            setMapType((m) => (m === "google" ? "satellite" : "google"))
+          }
           hitSlop={6}
         >
           <Ionicons
@@ -504,10 +592,7 @@ export default function MapScreen() {
 
         {/* Hide / show the panel */}
         <Pressable
-          style={[
-            styles.toggleButton,
-            { backgroundColor: themeColors.teal },
-          ]}
+          style={[styles.toggleButton, { backgroundColor: themeColors.teal }]}
           onPress={togglePanel}
         >
           <Ionicons
@@ -543,7 +628,10 @@ export default function MapScreen() {
           >
             <View style={styles.progressHeader}>
               <Text
-                style={[styles.sectionTitle, { color: themeColors.textPrimary }]}
+                style={[
+                  styles.sectionTitle,
+                  { color: themeColors.textPrimary },
+                ]}
               >
                 Your progress
               </Text>
@@ -595,9 +683,7 @@ export default function MapScreen() {
               >
                 Visited ({visited.length})
               </Text>
-              {visited.map((point) =>
-                renderRow(point, () => openStory(point.id)),
-              )}
+              {visited.map((point) => renderRow(point, () => openStory(point)))}
             </>
           )}
         </ScrollView>
