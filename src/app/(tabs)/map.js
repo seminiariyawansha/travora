@@ -114,6 +114,7 @@ export default function MapScreen() {
   const [follow, setFollow] = useState(true);
   const [focus, setFocus] = useState(null);
   const [searchMarker, setSearchMarker] = useState(null);
+  const [mapType, setMapType] = useState("google");
 
   const { location: realLocation, errorMsg: locationError } = useLocation();
   const effectiveLocation = simulatedLocation || realLocation;
@@ -422,6 +423,7 @@ export default function MapScreen() {
           followUser={follow}
           focus={focus}
           searchMarker={searchMarker}
+          mapType={mapType}
           onPointPress={handlePinPress}
           onUserMoved={() => setFollow(false)}
         />
@@ -467,6 +469,22 @@ export default function MapScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Map style toggle (Roads / Satellite) */}
+        <Pressable
+          style={[
+            styles.layerButton,
+            { backgroundColor: themeColors.surface },
+          ]}
+          onPress={() => setMapType((m) => (m === "google" ? "satellite" : "google"))}
+          hitSlop={6}
+        >
+          <Ionicons
+            name={mapType === "google" ? "earth-outline" : "map-outline"}
+            size={20}
+            color={themeColors.teal}
+          />
+        </Pressable>
 
         {/* Locate me */}
         <Pressable
@@ -608,6 +626,23 @@ const styles = StyleSheet.create({
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { fontSize: 11, fontWeight: "600", color: colors.ink },
 
+  layerButton: {
+    position: "absolute",
+    right: 12,
+    bottom: 90,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+    zIndex: 5,
+  },
   locateButton: {
     position: "absolute",
     right: 12,
