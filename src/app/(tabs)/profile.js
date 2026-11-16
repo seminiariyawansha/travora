@@ -1,6 +1,7 @@
 // src/app/(tabs)/profile.js
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   Image,
   Pressable,
@@ -18,6 +19,7 @@ import ScreenContainer from "../../components/ScreenContainer";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { logoutUser } from "../../services/authService";
+import { getUserOverallStats } from "../../services/progressService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
 
@@ -35,14 +37,30 @@ export default function Profile() {
   const { user, profile } = useAuth();
   const { colors, isDark } = useTheme();
 
+  const [liveStats, setLiveStats] = useState({
+    totalPoints: 0,
+    destinationsVisited: 0,
+    pointsUnlocked: 0,
+  });
+
+  // Reload stats every time the Profile tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (!user?.uid) return;
+      getUserOverallStats(user.uid)
+        .then((s) => setLiveStats(s))
+        .catch(() => {});
+    }, [user?.uid])
+  );
+
   const displayName = profile?.name || user?.displayName || "Explorer";
   const avatarUrl = profile?.photoURL || user?.photoURL || null;
   const avatarSize = moderateScale(78);
 
   const stats = {
-    totalPoints: profile?.totalPoints ?? 0,
-    destinationsVisited: profile?.destinationsVisited ?? 0,
-    pointsUnlocked: profile?.pointsUnlocked ?? 0,
+    totalPoints: liveStats.totalPoints,
+    destinationsVisited: liveStats.destinationsVisited,
+    pointsUnlocked: liveStats.pointsUnlocked,
   };
 
   async function handleLogout() {

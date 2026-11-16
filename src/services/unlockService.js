@@ -1,5 +1,6 @@
 // src/services/unlockService.js
 import { addPendingSync } from "../db/syncQueue";
+import { syncPendingProgress } from "../db/syncService";
 import { checkGeofence } from "./geofenceService";
 
 // Track points successfully unlocked during the current session using "${destinationId}:${pointId}"
@@ -64,6 +65,11 @@ export async function unlockNearbyPoints(
       sessionUnlockedPoints.add(uniqueKey);
 
       newlyUnlockedPoints.push(point);
+
+      // 5. Attempt immediate Firebase sync in the background (non-blocking)
+      syncPendingProgress().catch((e) =>
+        console.log("Background sync error:", e.message)
+      );
     } catch (error) {
       // If saving to sync queue fails, log error and skip marking as unlocked
       console.error(

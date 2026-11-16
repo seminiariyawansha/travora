@@ -32,6 +32,8 @@ export async function syncPendingProgress() {
         );
 
         const existing = await getDoc(progressRef);
+        let isNewPoint = false;
+        const pointsToAdd = Number(item.pointsEarned || 0);
 
         if (existing.exists()) {
           const data = existing.data() || {};
@@ -39,17 +41,35 @@ export async function syncPendingProgress() {
             Array.isArray(data.unlockedPoints) &&
             data.unlockedPoints.includes(item.pointId);
 
-          await updateDoc(progressRef, {
-            totalPoints: alreadyUnlocked
-              ? (data.totalPoints || 0)
-              : increment(Number(item.pointsEarned || 0)),
-            unlockedPoints: arrayUnion(item.pointId),
-          });
+          if (!alreadyUnlocked) {
+            isNewPoint = true;
+            await updateDoc(progressRef, {
+              totalPoints: increment(pointsToAdd),
+              unlockedPoints: arrayUnion(item.pointId),
+            });
+          }
         } else {
+          isNewPoint = true;
           await setDoc(progressRef, {
-            totalPoints: Number(item.pointsEarned || 0),
+            totalPoints: pointsToAdd,
             unlockedPoints: [item.pointId],
           });
+        }
+
+        // Also update the root user document so profile stats stay in sync
+        if (isNewPoint && item.userId) {
+          try {
+            const userRef = doc(firestoreDb, "users", item.userId);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              await updateDoc(userRef, {
+                totalPoints: increment(pointsToAdd),
+                pointsUnlocked: increment(1),
+              });
+            }
+          } catch (userErr) {
+            console.log("Sync user root doc error:", userErr.message);
+          }
         }
 
         await markSynced(item.id);
