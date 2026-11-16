@@ -1,4 +1,30 @@
 // src/weather/weatherSortingService.js
+// getSuggestionReason: required by Member 5's guide — builds the plain-English
+// banner reason text shown in the destination screen's "Why this order?" tooltip.
+export function getSuggestionReason(weatherInfo) {
+  if (!weatherInfo || typeof weatherInfo.isRaining !== "boolean") {
+    return null; // no banner needed when weather is unavailable
+  }
+
+  const isCached = Boolean(
+    weatherInfo.isCached || weatherInfo.isStale || weatherInfo.source === "cache"
+  );
+
+  let reason = "";
+  if (weatherInfo.isRaining) {
+    reason =
+      "Rain is expected — we've prioritized indoor-friendly locations so you're not caught outside.";
+  } else {
+    reason =
+      "Weather conditions are clear — outdoor points are prioritized for the best experience.";
+  }
+
+  if (isCached && weatherInfo.fetchedAt) {
+    reason += ` (weather last updated ${new Date(weatherInfo.fetchedAt).toLocaleTimeString()})`;
+  }
+
+  return reason;
+}
 
 /**
  * Sorts tourist points based on current weather conditions.
