@@ -235,6 +235,31 @@ export default function Profile() {
               Settings
             </Text>
             <View style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+              {profile?.role === "admin" ? (
+                <Pressable
+                  style={[styles.menuRow, styles.menuDivider, { borderBottomColor: colors.divider }]}
+                  onPress={() => router.push("/admin/dashboard")}
+                >
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={moderateScale(18)}
+                    color={colors.teal}
+                  />
+                  <Text
+                    style={[
+                      styles.menuLabel,
+                      { fontSize: moderateScale(13.5), color: colors.textPrimary, fontWeight: "600" },
+                    ]}
+                  >
+                    Admin Dashboard
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={moderateScale(15)}
+                    color={colors.gray}
+                  />
+                </Pressable>
+              ) : null}
               {MENU_ITEMS.map((item, i) => (
                 <Pressable
                   key={item.label}
