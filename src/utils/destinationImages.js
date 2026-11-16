@@ -10,6 +10,8 @@ const DESTINATION_PHOTOS = {
     "https://images.unsplash.com/photo-1586861635167-e5223aadc9fe?q=80&w=1000&auto=format&fit=crop",
   kandy:
     "https://images.unsplash.com/photo-1546708973-b339540b5162?q=80&w=1000&auto=format&fit=crop",
+  mirissa:
+    "https://images.unsplash.com/photo-1544735716-392fe2489ffa?q=80&w=1000&auto=format&fit=crop",
   default:
     "https://images.unsplash.com/photo-1588598198321-9735fd52455b?q=80&w=1000&auto=format&fit=crop",
 };
@@ -36,6 +38,7 @@ export function getDestinationPhoto(destinationId, destName) {
   if (key.includes("sigiriya")) return DESTINATION_PHOTOS.sigiriya;
   if (key.includes("ella")) return DESTINATION_PHOTOS.ella;
   if (key.includes("kandy")) return DESTINATION_PHOTOS.kandy;
+  if (key.includes("mirissa")) return DESTINATION_PHOTOS.mirissa;
   return DESTINATION_PHOTOS[key] || DESTINATION_PHOTOS.default;
 }
 

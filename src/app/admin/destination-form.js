@@ -32,6 +32,7 @@ export default function DestinationForm() {
   const [longitude, setLongitude] = useState("");
   const [story, setStory] = useState("");
   const [video, setVideo] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -54,6 +55,7 @@ export default function DestinationForm() {
           setLongitude(d.longitude != null ? String(d.longitude) : "");
           setStory(d.story ?? "");
           setVideo(d.video ?? "");
+          setImageUrl(d.imageUrl ?? "");
         }
       } catch (e) {
         if (active) setError("Could not load this destination.");
@@ -93,6 +95,7 @@ export default function DestinationForm() {
       longitude: lng,
       story: story.trim(),
       video: video.trim(),
+      imageUrl: imageUrl.trim(),
     };
     // New destinations start with no images (image upload comes in step 19d).
     // When editing, "images" is left alone because saveDestination merges.
@@ -222,7 +225,17 @@ export default function DestinationForm() {
             keyboardType="url"
           />
 
-          <Text style={styles.hint}>Cover image upload comes in the next step.</Text>
+          <Text style={styles.label}>Cover Image URL</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="https://... (image URL)"
+            placeholderTextColor={colors.gray}
+            value={imageUrl}
+            onChangeText={setImageUrl}
+            autoCapitalize="none"
+            keyboardType="url"
+          />
+          <Text style={styles.hint}>Paste any high-resolution photo URL for this destination.</Text>
 
           {saving ? (
             <ActivityIndicator color={colors.teal} style={{ marginTop: 10 }} />
