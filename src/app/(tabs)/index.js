@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   Image,
+  ImageBackground,
   Pressable,
   ScrollView,
   StatusBar,
@@ -20,6 +21,7 @@ import { useTheme } from "../../context/ThemeContext";
 import { getDestinations } from "../../services/destinationService";
 import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
+import { getDestinationPhoto } from "../../utils/destinationImages";
 import { getWeatherForDestination } from "../../weather/weatherFetchService";
 import {
   getBannerWeatherReason,
@@ -220,27 +222,40 @@ export default function Home() {
               </Text>
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {filteredDestinations.map((dest) => (
-                  <Pressable
-                    key={dest.id}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/destination",
-                        params: { destinationId: dest.id },
-                      })
-                    }
-                    style={[styles.destCard, { backgroundColor: colors.teal }]}
-                  >
-                    {dest.sizeMb && (
-                      <Text style={styles.destBadge}>{dest.sizeMb} MB</Text>
-                    )}
-                    <Text
-                      style={[styles.destName, { fontSize: moderateScale(15) }]}
+                {filteredDestinations.map((dest) => {
+                  const photoUri = dest.imageUrl || dest.photoUrl || getDestinationPhoto(dest.id, dest.name);
+                  return (
+                    <Pressable
+                      key={dest.id}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/destination",
+                          params: { destinationId: dest.id },
+                        })
+                      }
+                      style={styles.destCard}
                     >
-                      {dest.name}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <ImageBackground
+                        source={{ uri: photoUri }}
+                        style={styles.destCardBg}
+                        imageStyle={{ borderRadius: 16 }}
+                      >
+                        <View style={styles.destOverlay}>
+                          {dest.sizeMb ? (
+                            <Text style={styles.destBadge}>{dest.sizeMb} MB</Text>
+                          ) : (
+                            <View />
+                          )}
+                          <Text
+                            style={[styles.destName, { fontSize: moderateScale(15) }]}
+                          >
+                            {dest.name}
+                          </Text>
+                        </View>
+                      </ImageBackground>
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             )}
           </View>
@@ -329,10 +344,19 @@ const styles = StyleSheet.create({
     width: 150,
     height: 170,
     borderRadius: 16,
-    backgroundColor: colors.teal,
     marginRight: 12,
+    overflow: "hidden",
+    backgroundColor: "#1B3A35",
+  },
+  destCardBg: {
+    width: "100%",
+    height: "100%",
+  },
+  destOverlay: {
+    flex: 1,
     padding: 12,
     justifyContent: "space-between",
+    backgroundColor: "rgba(0,0,0,0.38)",
   },
   destBadge: {
     alignSelf: "flex-end",

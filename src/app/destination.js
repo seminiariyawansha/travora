@@ -4,6 +4,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  ImageBackground,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +24,7 @@ import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
 import { useTheme } from "../context/ThemeContext";
 import { useResponsive } from "../theme/responsive";
+import { getDestinationPhoto } from "../utils/destinationImages";
 import { getWeatherForDestination } from "../weather/weatherFetchService";
 import {
   getBannerWeatherReason,
@@ -182,16 +184,22 @@ export default function Destination() {
   };
 
   const bannerReason = getBannerWeatherReason(weatherInfo);
+  const heroPhotoUri =
+    destination?.imageUrl ||
+    destination?.photoUrl ||
+    getDestinationPhoto(destinationId, destination?.name);
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.bg }]}>
-      {/* Hero spans the full width, even on tablets */}
-      <View
+      {/* Hero spans the full width, with real destination photography */}
+      <ImageBackground
+        source={{ uri: heroPhotoUri }}
         style={[
           styles.hero,
           { height: heroHeight + insets.top, paddingTop: insets.top + 12 },
         ]}
       >
+        <View style={styles.heroDim} />
         <View style={styles.heroTopRow}>
           <Pressable
             onPress={() => router.back()}
@@ -216,7 +224,7 @@ export default function Destination() {
         <Text style={[styles.heroTitle, { fontSize: moderateScale(26) }]}>
           {destination?.name || "Destination"}
         </Text>
-      </View>
+      </ImageBackground>
 
       <ScreenContainer>
         <ScrollView
@@ -316,10 +324,21 @@ export default function Destination() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.sand },
   hero: {
-    backgroundColor: colors.teal,
+    backgroundColor: colors.tealDark,
     paddingHorizontal: 20,
     justifyContent: "space-between",
     paddingBottom: 18,
+    position: "relative",
+    overflow: "hidden",
+  },
+  heroDim: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.42)",
+  },
   },
   heroTopRow: {
     flexDirection: "row",

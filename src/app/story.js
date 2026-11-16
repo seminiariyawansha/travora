@@ -21,6 +21,7 @@ import { getPoints } from "../services/destinationService";
 import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
 import { useTheme } from "../context/ThemeContext";
+import { getPointPhoto } from "../utils/destinationImages";
 
 // ─── tiny helpers ────────────────────────────────────────────────────────────
 const TEAL       = "#10534a";
@@ -226,6 +227,14 @@ export default function Story() {
   const firstChar  = paragraphs[0]?.[0] ?? "";
   const firstRest  = paragraphs[0]?.slice(1) ?? "";
 
+  const isValidPhoto = (url) => typeof url === "string" && (url.startsWith("http") || url.startsWith("file://"));
+  const photoUri =
+    (isValidPhoto(content?.imageUrl) && content.imageUrl) ||
+    (Array.isArray(content?.images) && isValidPhoto(content.images[0]) && content.images[0]) ||
+    (isValidPhoto(point?.imageUrl) && point.imageUrl) ||
+    (Array.isArray(point?.imageLocalPaths) && isValidPhoto(point.imageLocalPaths[0]) && point.imageLocalPaths[0]) ||
+    getPointPhoto(point?.id || pointId, point?.name, destinationId);
+
   return (
     <View style={[s.root, { backgroundColor: paperBg }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -233,8 +242,8 @@ export default function Story() {
       {/* ── FULL-BLEED PARALLAX HEADER IMAGE ── */}
       <View style={s.heroWrap}>
         <Animated.View style={[s.heroImgWrap, { transform: [{ translateY: imgTransY }], opacity: imgOpacity }]}>
-          {content.imageUrl ? (
-            <Image source={{ uri: content.imageUrl }} style={s.heroImg} resizeMode="cover" />
+          {photoUri ? (
+            <Image source={{ uri: photoUri }} style={s.heroImg} resizeMode="cover" />
           ) : (
             <View style={[s.heroImg, { backgroundColor: "#1B3A35" }]} />
           )}
@@ -306,9 +315,9 @@ export default function Story() {
           ))}
 
           {/* media — full bleed with caption strip */}
-          {content.imageUrl && !content.videoUrl && (
+          {photoUri && !content.videoUrl && (
             <View style={[s.mediaCard, { backgroundColor: cardBg, borderColor: paperLine }]}>
-              <Image source={{ uri: content.imageUrl }} style={s.mediaImg} resizeMode="cover" />
+              <Image source={{ uri: photoUri }} style={s.mediaImg} resizeMode="cover" />
               <View style={s.captionStrip}>
                 <Ionicons name="camera-outline" size={11} color={GOLD} />
                 <Text style={s.captionTxt}>  On location — {point.name}</Text>
