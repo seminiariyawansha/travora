@@ -18,7 +18,7 @@ import WeatherBanner from "../../components/WeatherBanner";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { getDestinations } from "../../services/destinationService";
-import { colors as defaultColors } from "../../theme/colors";
+import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
 import { getWeatherForDestination } from "../../weather/weatherFetchService";
 import {

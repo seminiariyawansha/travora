@@ -18,7 +18,7 @@ import ScreenContainer from "../../components/ScreenContainer";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { logoutUser } from "../../services/authService";
-import { colors as _fallbackColors } from "../../theme/colors";
+import { colors } from "../../theme/colors";
 import { useResponsive } from "../../theme/responsive";
 
 const MENU_ITEMS = [
