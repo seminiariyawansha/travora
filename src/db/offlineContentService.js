@@ -1,5 +1,34 @@
 // db/offlineContentService.js
 import { getDb } from "./database";
+import { startAutoSync } from "./syncService";
+
+// Start background auto-sync so queued offline unlocks sync when internet is available
+try {
+  startAutoSync();
+} catch (e) {
+  // Ignore sync setup error if offline during initialization
+}
+
+function formatCachedPoint(row) {
+  if (!row) return null;
+  let parsedImages = [];
+  try {
+    parsedImages = JSON.parse(row.imageLocalPaths || "[]");
+    if (!Array.isArray(parsedImages)) parsedImages = [];
+  } catch {
+    parsedImages = [];
+  }
+
+  return {
+    ...row,
+    latitude: row.latitude != null ? Number(row.latitude) : null,
+    longitude: row.longitude != null ? Number(row.longitude) : null,
+    radiusMeters: row.radiusMeters != null ? Number(row.radiusMeters) : null,
+    pointsValue: Number(row.pointsValue || 0),
+    indoorFriendly: !!row.indoorFriendly,
+    imageLocalPaths: parsedImages,
+  };
+}
 
 export async function getCachedPoints(destinationId) {
   const db = await getDb();
@@ -7,11 +36,7 @@ export async function getCachedPoints(destinationId) {
     "SELECT * FROM cached_points WHERE destinationId = ?",
     [destinationId],
   );
-  return rows.map((row) => ({
-    ...row,
-    indoorFriendly: !!row.indoorFriendly,
-    imageLocalPaths: JSON.parse(row.imageLocalPaths || "[]"),
-  }));
+  return (rows || []).map(formatCachedPoint);
 }
 
 export async function getCachedPointById(pointId) {
@@ -20,10 +45,5 @@ export async function getCachedPointById(pointId) {
     "SELECT * FROM cached_points WHERE id = ?",
     [pointId],
   );
-  if (!row) return null;
-  return {
-    ...row,
-    indoorFriendly: !!row.indoorFriendly,
-    imageLocalPaths: JSON.parse(row.imageLocalPaths || "[]"),
-  };
+  return formatCachedPoint(row);
 }

@@ -1,52 +1,84 @@
 // db/syncService.js
 import {
-    arrayUnion,
-    doc,
-    getDoc,
-    getFirestore,
-    increment,
-    setDoc,
-    updateDoc,
+  arrayUnion,
+  doc,
+  getDoc,
+  increment,
+  setDoc,
+  updateDoc,
 } from "firebase/firestore";
-import { app } from "../services/firebaseConfig";
+import { db as firestoreDb } from "../services/firebaseConfig";
+import { subscribeToConnectivity } from "./networkService";
 import { getPendingSync, markSynced } from "./syncQueue";
 
-const firestoreDb = getFirestore(app);
+let isSyncing = false;
 
 export async function syncPendingProgress() {
-  const pendingItems = await getPendingSync();
-  let syncedCount = 0;
+  if (isSyncing) return 0;
+  isSyncing = true;
 
-  for (const item of pendingItems) {
-    try {
-      const progressRef = doc(
-        firestoreDb,
-        "users",
-        item.userId,
-        "progress",
-        item.destinationId,
-      );
+  try {
+    const pendingItems = await getPendingSync();
+    let syncedCount = 0;
 
-      const existing = await getDoc(progressRef);
+    for (const item of pendingItems) {
+      try {
+        const progressRef = doc(
+          firestoreDb,
+          "users",
+          item.userId,
+          "progress",
+          item.destinationId,
+        );
 
-      if (existing.exists()) {
-        await updateDoc(progressRef, {
-          totalPoints: increment(item.pointsEarned),
-          unlockedPoints: arrayUnion(item.pointId),
-        });
-      } else {
-        await setDoc(progressRef, {
-          totalPoints: item.pointsEarned,
-          unlockedPoints: [item.pointId],
-        });
+        const existing = await getDoc(progressRef);
+
+        if (existing.exists()) {
+          const data = existing.data() || {};
+          const alreadyUnlocked =
+            Array.isArray(data.unlockedPoints) &&
+            data.unlockedPoints.includes(item.pointId);
+
+          await updateDoc(progressRef, {
+            totalPoints: alreadyUnlocked
+              ? (data.totalPoints || 0)
+              : increment(Number(item.pointsEarned || 0)),
+            unlockedPoints: arrayUnion(item.pointId),
+          });
+        } else {
+          await setDoc(progressRef, {
+            totalPoints: Number(item.pointsEarned || 0),
+            unlockedPoints: [item.pointId],
+          });
+        }
+
+        await markSynced(item.id);
+        syncedCount++;
+      } catch (e) {
+        console.log("Sync failed for item", item.id, e);
       }
-
-      await markSynced(item.id);
-      syncedCount++;
-    } catch (e) {
-      console.log("Sync failed for item", item.id, e);
     }
-  }
 
-  return syncedCount;
+    return syncedCount;
+  } finally {
+    isSyncing = false;
+  }
+}
+
+let autoSyncUnsubscribe = null;
+
+export function startAutoSync() {
+  if (autoSyncUnsubscribe) return autoSyncUnsubscribe;
+
+  autoSyncUnsubscribe = subscribeToConnectivity(async (isOnline) => {
+    if (isOnline) {
+      try {
+        await syncPendingProgress();
+      } catch (err) {
+        console.log("Auto-sync error on reconnect:", err);
+      }
+    }
+  });
+
+  return autoSyncUnsubscribe;
 }
