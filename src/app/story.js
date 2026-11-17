@@ -5,7 +5,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -22,11 +21,9 @@ import QuizCard from "../components/QuizCard";
 import ScreenContainer from "../components/ScreenContainer";
 import { resolvePointContent } from "../services/contentResolver";
 import { getPoints } from "../services/destinationService";
-import { auth } from "../services/firebaseConfig";
 import { colors } from "../theme/colors";
 import { useResponsive } from "../theme/responsive";
 import { extractQuiz, getImageList } from "../utils/pointContent";
-import { loadVisitedIds } from "../utils/visitedPoints";
 
 export default function Story() {
   const router = useRouter();
@@ -34,49 +31,32 @@ export default function Story() {
   const { contentMaxWidth, moderateScale } = useResponsive();
   const { pointId, destinationId } = useLocalSearchParams();
 
-  const [access, setAccess] = useState("checking"); // checking | locked | unlocked
   const [point, setPoint] = useState(null);
   const [content, setContent] = useState(null);
   const [imageIndex, setImageIndex] = useState(0);
   const [viewerImage, setViewerImage] = useState(null);
 
-  // Data loading: always runs. The content is only fetched if the point is unlocked.
+  // Data loading: always runs
   useEffect(() => {
-    let active = true;
-
     async function load() {
-      setAccess("checking");
-      const userId = auth.currentUser?.uid;
-
-      let visited = await loadVisitedIds(userId, destinationId);
-
-      // Right after an unlock, the save can still be finishing. Check once more.
-      if (!visited.has(pointId)) {
-        await new Promise((resolve) => setTimeout(resolve, 900));
-        visited = await loadVisitedIds(userId, destinationId);
-      }
-
       const points = await getPoints(destinationId);
       const found = points.find((p) => p.id === pointId);
-      if (!active) return;
-      setPoint(found);
-
-      if (!visited.has(pointId)) {
-        setContent(null);
-        setAccess("locked");
-        return;
-      }
-
       const resolvedContent = await resolvePointContent(destinationId, pointId);
-      if (!active) return;
-      setContent(resolvedContent);
-      setAccess("unlocked");
-    }
 
+      // TEMPORARY: shows where the images and quiz are stored. Delete once it works.
+      console.log("STORY point keys:", Object.keys(found || {}));
+      console.log("STORY content keys:", Object.keys(resolvedContent || {}));
+      console.log(
+        "STORY quiz raw:",
+        JSON.stringify(
+          found?.quiz ?? found?.content?.quiz ?? resolvedContent?.quiz ?? null,
+        ),
+      );
+
+      setPoint(found);
+      setContent(resolvedContent);
+    }
     load();
-    return () => {
-      active = false;
-    };
   }, [pointId, destinationId]);
 
   // Video player: always called, starts with no source
@@ -98,55 +78,6 @@ export default function Story() {
   );
 
   // Every hook above runs on every render: only the JSX below is conditional
-  if (access === "checking") {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.teal} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (access === "locked") {
-    return (
-      <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-        <View style={styles.hero}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.backButton}
-            hitSlop={10}
-          >
-            <Ionicons name="chevron-back" size={20} color={colors.white} />
-          </Pressable>
-        </View>
-
-        <View style={styles.lockedBox}>
-          <View style={styles.lockCircle}>
-            <Ionicons name="lock-closed" size={34} color={colors.white} />
-          </View>
-          <Text style={styles.lockedTitle}>
-            {point?.name ?? "This place"} is locked
-          </Text>
-          <Text style={styles.lockedText}>
-            Visit this place in person to unlock its story, photos, video and
-            quiz.
-          </Text>
-
-          <View style={{ width: "100%", maxWidth: 360, marginTop: 8 }}>
-            <Button
-              title="Find it on the map"
-              onPress={() => router.push("/(tabs)/map")}
-            />
-          </View>
-          <Pressable onPress={() => router.back()} hitSlop={10}>
-            <Text style={styles.lockedBack}>Go back</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   if (!point || !content) return null;
 
   const imageWidth = contentMaxWidth - 40;
@@ -281,7 +212,6 @@ export default function Story() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.sand },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
   hero: {
     height: 70,
     backgroundColor: colors.teal,
@@ -318,39 +248,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "#0D0D0D",
     aspectRatio: 16 / 9,
-  },
-  lockedBox: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    gap: 12,
-  },
-  lockCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: colors.gray,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lockedTitle: {
-    fontSize: 19,
-    fontWeight: "700",
-    color: colors.ink,
-    textAlign: "center",
-  },
-  lockedText: {
-    fontSize: 13.5,
-    color: colors.gray,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  lockedBack: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.gray,
-    marginTop: 6,
   },
   viewer: {
     flex: 1,
