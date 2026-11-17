@@ -1,10 +1,11 @@
 // src/app/destination.js
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  ImageBackground,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,173 +18,120 @@ import ScreenContainer from "../components/ScreenContainer";
 import Tag from "../components/Tag";
 import WeatherBanner from "../components/WeatherBanner";
 import { downloadDestination } from "../db/downloadService";
-import { getCachedPoints } from "../db/offlineContentService";
 import { getDestination, getPoints } from "../services/destinationService";
 import { auth } from "../services/firebaseConfig";
-import { getUserProgress } from "../services/progressService";
 import { colors } from "../theme/colors";
-import { useTheme } from "../context/ThemeContext";
 import { useResponsive } from "../theme/responsive";
-import { getDestinationPhoto } from "../utils/destinationImages";
-import { getWeatherForDestination } from "../weather/weatherFetchService";
-import {
-  getBannerWeatherReason,
-  showWeatherExplanationAlert,
-} from "../weather/weatherReasonService";
-import { sortPointsByWeather } from "../weather/weatherSortingService";
+import { loadVisitedIds } from "../utils/visitedPoints";
+import * as WeatherOverride from "../weather/devWeatherOverride";
+import * as WeatherFetch from "../weather/weatherFetchService";
+import * as WeatherSort from "../weather/weatherSortingService";
+
+// The weather helpers come from Member 5's files. Each one is optional here:
+// if a function is missing or was renamed, the screen simply skips that part.
+async function fetchWeather(destinationId, destination) {
+  if (typeof WeatherFetch.getWeatherForDestination !== "function") return null;
+  if (destination?.latitude == null || destination?.longitude == null)
+    return null;
+  return WeatherFetch.getWeatherForDestination(
+    destinationId,
+    destination.latitude,
+    destination.longitude,
+  );
+}
+
+function sortWithWeather(points, weather) {
+  const sorter = WeatherSort.sortPointsByWeather;
+  return typeof sorter === "function" ? sorter(points, weather) : points;
+}
+
+function bannerText(weather) {
+  if (!weather || typeof WeatherSort.getSuggestionReason !== "function")
+    return null;
+  return WeatherSort.getSuggestionReason(weather) ?? null;
+}
+
+function whyText(weather) {
+  if (typeof WeatherSort.getWhyExplanation === "function") {
+    return WeatherSort.getWhyExplanation(weather);
+  }
+  return "Points are ordered using the weather at this destination. Indoor points come first when it's wet. This is only a suggestion.";
+}
 
 export default function Destination() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { moderateScale, height } = useResponsive();
   const { destinationId } = useLocalSearchParams();
-  const { colors: themeColors, isDark } = useTheme();
 
   const [destination, setDestination] = useState(null);
   const [points, setPoints] = useState([]);
-  const [weatherInfo, setWeatherInfo] = useState(null);
+  const [weather, setWeather] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Hero height scales with the screen, but stays within a sensible range
-  const heroHeight = Math.min(Math.max(height * 0.2, 150), 230);
-
-  const loadScreen = useCallback(
-    async (isActive) => {
-      setLoading(true);
-      setLoadError("");
-      setWeatherInfo(null);
-
-      // 1. Try Firebase first (works when online)
-      let dest = null;
-      let rawPoints = [];
-      let onlineFailed = false;
-
-      try {
-        dest = await getDestination(destinationId);
-        rawPoints = await getPoints(destinationId);
-      } catch (error) {
-        onlineFailed = true;
-        console.log("Online load failed, trying offline data:", error.message);
-      }
-
-      // 2. If Firebase gave no points, fall back to the downloaded (offline) points
-      if (rawPoints.length === 0) {
-        try {
-          const cached = await getCachedPoints(destinationId);
-          if (cached.length > 0) rawPoints = cached;
-        } catch (cacheError) {
-          console.log("Offline points load failed:", cacheError.message);
-        }
-      }
-
-      // 3. Fetch user progress (optional)
-      let unlockedIds = [];
-      try {
-        const userId = auth.currentUser?.uid ?? "guest";
-        const progress = await getUserProgress(userId, destinationId);
-        unlockedIds = progress?.unlockedPoints ?? [];
-      } catch (progressError) {
-        console.log("Progress load failed:", progressError.message);
-      }
-
-      if (!isActive()) return;
-
-      // 4. Merge unlocked status into points
-      const mergedPoints = rawPoints.map((p) => ({
-        ...p,
-        unlocked: unlockedIds.includes(p.id),
-      }));
-
-      setDestination(dest);
-      setPoints(mergedPoints);
-
-      // Only show an error if we had no data at all
-      if (onlineFailed && mergedPoints.length === 0) {
-        setLoadError("Couldn't load this destination. Check your connection.");
-      }
-      setLoading(false);
-
-      // 5. Fetch weather in the background (live if online, cached if not)
-      const lat = dest?.latitude != null ? Number(dest.latitude) : null;
-      const lng = dest?.longitude != null ? Number(dest.longitude) : null;
-      const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
-
-      try {
-        // Offline, coordinates aren't needed: the cached weather is used
-        const weather = await getWeatherForDestination(
-          destinationId,
-          hasCoords ? lat : null,
-          hasCoords ? lng : null,
-        );
-        if (!isActive()) return;
-
-        if (weather) {
-          setWeatherInfo(weather);
-          // 6. Reorder points when weather arrives, preserving unlocked status
-          setPoints((currentPoints) =>
-            sortPointsByWeather(currentPoints, weather),
-          );
-        }
-      } catch (weatherErr) {
-        console.log(
-          "Weather fetch error on destination screen:",
-          weatherErr?.message,
-        );
-      }
-    },
-    [destinationId],
-  );
+  const heroHeight = Math.min(Math.max(height * 0.22, 170), 250);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      loadScreen(() => active);
+
+      async function load() {
+        setLoading(true);
+        setLoadError("");
+        try {
+          const dest = await getDestination(destinationId);
+          const rawPoints = await getPoints(destinationId);
+
+          // Which points has this person visited? Works online and offline.
+          const visited = await loadVisitedIds(
+            auth.currentUser?.uid,
+            destinationId,
+          );
+          const withStatus = rawPoints.map((p) => ({
+            ...p,
+            unlocked: visited.has(p.id),
+          }));
+
+          // Weather is optional: if it fails, points stay in their normal order
+          let weatherInfo = null;
+          try {
+            weatherInfo = await fetchWeather(destinationId, dest);
+          } catch (weatherError) {
+            console.log("Weather failed:", weatherError.message);
+          }
+
+          if (!active) return;
+          setDestination(dest);
+          setWeather(weatherInfo);
+          setPoints(sortWithWeather(withStatus, weatherInfo));
+        } catch (error) {
+          console.log("Destination load failed:", error.message);
+          if (active)
+            setLoadError(
+              "Couldn't load this destination. Check your connection.",
+            );
+        } finally {
+          if (active) setLoading(false);
+        }
+      }
+
+      load();
       return () => {
         active = false;
       };
-    }, [loadScreen]),
+    }, [destinationId, reloadKey]),
   );
 
   async function handleDownload() {
     setDownloading(true);
     setDownloadMessage("");
     try {
-      const result = await downloadDestination(destinationId);
-      console.log("Download result:", result);
-
-      const pointCount = result?.pointCount ?? 0;
-      const savedCount = result?.savedCount ?? 0;
-      const skipped   = Array.isArray(result?.skipped)   ? result.skipped   : [];
-      const noContent = Array.isArray(result?.noContent) ? result.noContent : [];
-
-      if (pointCount === 0) {
-        setDownloadMessage(
-          "Nothing to download yet. An admin needs to add points first.",
-        );
-      } else if (savedCount === 0) {
-        setDownloadMessage(
-          "Could not save any points. Please check your connection and try again.",
-        );
-      } else if (skipped.length > 0) {
-        const firstReason = skipped[0]?.reason ? ` (${skipped[0].reason})` : "";
-        setDownloadMessage(
-          `Downloaded ${savedCount} of ${pointCount} points. ${skipped.length} could not be saved.${firstReason}`,
-        );
-        loadScreen(() => true);
-      } else if (noContent.length > 0) {
-        setDownloadMessage(
-          `Downloaded ${savedCount} points. ${noContent.length} have no story, images or video yet.`,
-        );
-        loadScreen(() => true);
-      } else {
-        setDownloadMessage(
-          `Downloaded all ${pointCount} points. This destination now works offline.`,
-        );
-        loadScreen(() => true);
-      }
+      await downloadDestination(destinationId);
+      setDownloadMessage("Downloaded. This destination now works offline.");
     } catch (error) {
       console.log("Download failed:", error.message);
       setDownloadMessage("Download failed. Please try again.");
@@ -192,59 +140,91 @@ export default function Destination() {
     }
   }
 
-  const handlePressWhy = () => {
-    showWeatherExplanationAlert(weatherInfo);
-  };
+  // Locked points can't be opened until the tourist visits the place
+  function openPoint(point) {
+    if (!point.unlocked) {
+      Alert.alert(
+        "Locked",
+        `Visit ${point.name} in person to unlock its story, photos, video and quiz.`,
+        [
+          { text: "Show on map", onPress: () => router.push("/(tabs)/map") },
+          { text: "OK", style: "cancel" },
+        ],
+      );
+      return;
+    }
+    router.push({
+      pathname: "/story",
+      params: { pointId: point.id, destinationId },
+    });
+  }
 
-  const bannerReason = getBannerWeatherReason(weatherInfo);
-  const isValidPhoto = (url) =>
-    typeof url === "string" &&
-    (url.startsWith("http://") || url.startsWith("https://")) &&
-    !url.includes("wikimedia.org") &&
-    !url.includes("wikipedia.org") &&
-    !url.includes("placeholder");
+  // DEV TOOL: long-press the title to cycle Live -> Rain -> Clear -> Live
+  function cycleWeatherOverride() {
+    if (
+      typeof WeatherOverride.getWeatherOverride !== "function" ||
+      typeof WeatherOverride.setWeatherOverride !== "function"
+    ) {
+      return;
+    }
+    const current = WeatherOverride.getWeatherOverride();
+    const next =
+      current === null ? "rain" : current === "rain" ? "clear" : null;
+    WeatherOverride.setWeatherOverride(next);
+    setReloadKey((k) => k + 1);
+  }
 
-  const heroPhotoUri =
-    (isValidPhoto(destination?.imageUrl) && destination.imageUrl) ||
-    (isValidPhoto(destination?.photoUrl) && destination.photoUrl) ||
-    getDestinationPhoto(destinationId, destination?.name);
+  const reasonText = bannerText(weather);
 
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.bg }]}>
-      {/* Hero spans the full width, with real destination photography */}
-      <ImageBackground
-        source={{ uri: heroPhotoUri }}
-        style={[
-          styles.hero,
-          { height: heroHeight + insets.top, paddingTop: insets.top + 12 },
-        ]}
-      >
-        <View style={styles.heroDim} />
-        <View style={styles.heroTopRow}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.backButton}
-            hitSlop={10}
-          >
-            <Ionicons name="chevron-back" size={20} color={colors.white} />
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: "/progress",
-                params: { destinationId: destinationId ?? "sigiriya" },
-              })
-            }
-            style={styles.progressBtn}
-          >
-            <Ionicons name="ribbon-outline" size={15} color={colors.white} />
-            <Text style={styles.progressBtnText}>Progress</Text>
+    <View style={styles.container}>
+      {/* Hero: cover photo, back button, Progress button and the name */}
+      <View style={[styles.hero, { height: heroHeight + insets.top }]}>
+        {destination?.coverImage ? (
+          <Image
+            source={{ uri: destination.coverImage }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={250}
+          />
+        ) : null}
+        <View style={styles.heroShade} />
+
+        <View style={[styles.heroContent, { paddingTop: insets.top + 12 }]}>
+          <View style={styles.heroTop}>
+            <Pressable
+              onPress={() => router.back()}
+              style={styles.roundButton}
+              hitSlop={10}
+            >
+              <Ionicons name="chevron-back" size={20} color={colors.white} />
+            </Pressable>
+
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/progress",
+                  params: { destinationId },
+                })
+              }
+              style={styles.progressButton}
+              hitSlop={8}
+            >
+              <Ionicons name="ribbon-outline" size={16} color={colors.white} />
+              <Text style={styles.progressText}>Progress</Text>
+            </Pressable>
+          </View>
+
+          <Pressable onLongPress={cycleWeatherOverride} delayLongPress={600}>
+            <Text
+              style={[styles.heroTitle, { fontSize: moderateScale(26) }]}
+              numberOfLines={2}
+            >
+              {destination?.name || "Destination"}
+            </Text>
           </Pressable>
         </View>
-        <Text style={[styles.heroTitle, { fontSize: moderateScale(26) }]}>
-          {destination?.name || "Destination"}
-        </Text>
-      </ImageBackground>
+      </View>
 
       <ScreenContainer>
         <ScrollView
@@ -252,9 +232,23 @@ export default function Destination() {
           showsVerticalScrollIndicator={false}
         >
           <WeatherBanner
-            reasonText={bannerReason}
-            onPressWhy={handlePressWhy}
+            reasonText={reasonText}
+            onPressWhy={() => Alert.alert("Why this order?", whyText(weather))}
           />
+
+          {weather && (
+            <Text style={styles.weatherMeta}>
+              {weather.condition}
+              {weather.temperature != null
+                ? ` · ${Math.round(weather.temperature)}°C`
+                : ""}
+              {weather.isSimulated
+                ? " · simulated"
+                : weather.isStale
+                  ? " · saved weather (offline)"
+                  : " · live"}
+            </Text>
+          )}
 
           {loading && (
             <ActivityIndicator color={colors.teal} style={{ marginTop: 20 }} />
@@ -278,27 +272,16 @@ export default function Destination() {
           {points.map((point) => (
             <Pressable
               key={point.id}
-              onPress={() =>
-                router.push({
-                  pathname: "/story",
-                  params: { pointId: point.id, destinationId },
-                })
-              }
+              onPress={() => openPoint(point)}
               style={[
                 styles.pointCard,
-                {
-                  backgroundColor: themeColors.surface,
-                  borderColor: themeColors.cardBorder,
-                },
+                !point.unlocked && styles.pointCardLocked,
               ]}
             >
               <View style={{ flex: 1, gap: 4 }}>
                 <View style={styles.pointTitleRow}>
                   <Text
-                    style={[
-                      styles.pointName,
-                      { fontSize: moderateScale(14), color: themeColors.textPrimary },
-                    ]}
+                    style={[styles.pointName, { fontSize: moderateScale(14) }]}
                   >
                     {point.name}
                   </Text>
@@ -307,26 +290,23 @@ export default function Destination() {
                   )}
                 </View>
                 <Text
-                  style={[
-                    styles.pointMeta,
-                    { fontSize: moderateScale(11.5), color: themeColors.textSecondary },
-                  ]}
+                  style={[styles.pointMeta, { fontSize: moderateScale(11.5) }]}
                 >
                   {point.indoorFriendly ? "Indoor" : "Outdoor"} ·{" "}
                   {point.pointsValue ?? 0} pts
+                  {point.unlocked ? " · Visited" : ""}
                 </Text>
               </View>
               <Ionicons
                 name={point.unlocked ? "checkmark-circle" : "lock-closed"}
                 size={moderateScale(20)}
-                color={point.unlocked ? themeColors.teal : themeColors.gray}
+                color={point.unlocked ? colors.teal : colors.gray}
               />
             </Pressable>
           ))}
         </ScrollView>
 
-        {/* Pinned bottom action, clear of the system navigation bar */}
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16, backgroundColor: themeColors.bg }]}>
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
           {downloadMessage ? (
             <Text style={styles.downloadMessage}>{downloadMessage}</Text>
           ) : null}
@@ -343,50 +323,45 @@ export default function Destination() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.sand },
-  hero: {
-    backgroundColor: colors.tealDark,
+
+  hero: { backgroundColor: colors.teal, overflow: "hidden" },
+  heroShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.38)",
+  },
+  heroContent: {
+    ...StyleSheet.absoluteFillObject,
     paddingHorizontal: 20,
-    justifyContent: "space-between",
     paddingBottom: 18,
-    position: "relative",
-    overflow: "hidden",
+    justifyContent: "space-between",
   },
-  heroDim: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.42)",
-  },
-  heroTopRow: {
+  heroTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  progressBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-  },
-  progressBtnText: {
-    color: colors.white,
-    fontWeight: "600",
-    fontSize: 12,
-  },
-  backButton: {
+  roundButton: {
     width: 36,
     height: 36,
     borderRadius: 11,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
   },
+  progressButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+  },
+  progressText: { color: colors.white, fontSize: 13, fontWeight: "600" },
   heroTitle: { fontWeight: "700", color: colors.white },
+
+  weatherMeta: { fontSize: 11.5, color: colors.gray, fontWeight: "600" },
+
   pointCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -397,6 +372,7 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
     padding: 14,
   },
+  pointCardLocked: { backgroundColor: "#FBF9F5" },
   pointTitleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -405,6 +381,7 @@ const styles = StyleSheet.create({
   },
   pointName: { fontWeight: "600", color: colors.ink },
   pointMeta: { color: colors.gray },
+
   emptyBox: {
     alignItems: "center",
     gap: 6,
@@ -419,6 +396,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   errorText: { color: "#C0392B", fontSize: 12.5, fontWeight: "600" },
+
   bottomBar: {
     paddingHorizontal: 20,
     paddingTop: 10,
