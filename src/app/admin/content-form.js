@@ -35,8 +35,6 @@ export default function ContentForm() {
   const [newImage, setNewImage] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [newVideo, setNewVideo] = useState(null);
-  const [existingAudio, setExistingAudio] = useState("");
-  const [newAudio, setNewAudio] = useState(null);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState({ A: "", B: "", C: "" });
   const [correct, setCorrect] = useState("");
@@ -73,8 +71,6 @@ export default function ContentForm() {
     setNewImage("");
     setVideoUrl(c.videoUrl ?? "");
     setNewVideo(null);
-    setExistingAudio(c.audioUrl ?? "");
-    setNewAudio(null);
     const q = c.quiz;
     setQuestion(q?.question ?? "");
     setOptions({
@@ -150,20 +146,12 @@ export default function ContentForm() {
         finalVideoUrl = await uploadToCloudinary(newVideo.uri, "video");
       }
 
-      // Cloudinary stores audio under the "video" resource type.
-      let audioUrl = existingAudio;
-      if (newAudio) {
-        setStatus("Uploading audio...");
-        audioUrl = await uploadToCloudinary(newAudio.uri, "video");
-      }
-
       setStatus("Saving...");
       const content = {
         storyText: storyText.trim(),
         images,
         videoUrl: finalVideoUrl,
       };
-      if (audioUrl) content.audioUrl = audioUrl;
       if (quiz) content.quiz = quiz;
 
       await saveContent(selected.destinationId, selected.id, content);
@@ -175,7 +163,7 @@ export default function ContentForm() {
         setError("Permission denied. Ask Member 2 to allow admin writes in Firestore rules.");
       } else {
         setError(
-          "Could not save. Check your connection, and use a smaller file if you uploaded video or audio."
+          "Could not save. Check your connection, and use a smaller file if you uploaded a video."
         );
       }
     } finally {
@@ -259,14 +247,6 @@ export default function ContentForm() {
             keyboardType="url"
           />
           <MediaPickerField kind="video" value={newVideo} onChange={setNewVideo} />
-
-          <Text style={styles.label}>Audio story</Text>
-          {existingAudio && !newAudio ? (
-            <Text style={styles.hint}>
-              This point already has audio. Choosing a new file replaces it.
-            </Text>
-          ) : null}
-          <MediaPickerField kind="audio" value={newAudio} onChange={setNewAudio} />
 
           <Text style={styles.section}>Quiz (optional)</Text>
 
